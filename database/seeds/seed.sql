@@ -1,272 +1,231 @@
-﻿-- =====================================================
+-- =====================================================
 -- VPN Gaming Platform - Seed Data
 -- PostgreSQL 15+
 -- =====================================================
 -- Run after init.sql:
 --   psql -U vpn_user -d vpn_app -f seeds/seed.sql
-
-
--- =====================================================
--- SEED DATA - Initial Demo Data
--- =====================================================
--- Default Credentials:
--- Admin: admin@example.com / Bn2908#2004
--- Demo:  demo@example.com / demo123456
+--
+-- Default demo credentials:
+--   Admin: admin@example.com / Bn2908#2004
+--   Demo:  demo@example.com  / demo123456
 
 -- =====================================================
--- MACHINES (20 Gaming Servers)
+-- SERVICE PLANS
 -- =====================================================
--- Singapore: 4 servers
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
-VALUES 
-    ('SG-001', 'SG', 'Singapore - Data Center 1', 12, 'RTX 4090', 'idle', NOW()),
-    ('SG-002', 'SG', 'Singapore - Data Center 1', 13, 'RTX 4090', 'idle', NOW()),
-    ('SG-003', 'SG', 'Singapore - Data Center 2', 14, 'RTX 3090', 'idle', NOW()),
-    ('SG-004', 'SG', 'Singapore - Data Center 2', 15, 'RTX 3080', 'idle', NOW())
-ON CONFLICT (code) DO NOTHING;
-
--- Japan: 4 servers
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
-VALUES 
-    ('JP-001', 'JP', 'Tokyo - Data Center 1', 25, 'RTX 4090', 'idle', NOW()),
-    ('JP-002', 'JP', 'Tokyo - Data Center 1', 26, 'RTX 4080', 'idle', NOW()),
-    ('JP-003', 'JP', 'Osaka - Data Center 2', 28, 'RTX 3090', 'idle', NOW()),
-    ('JP-004', 'JP', 'Osaka - Data Center 2', 29, 'RTX 3080', 'idle', NOW())
-ON CONFLICT (code) DO NOTHING;
-
--- United States: 4 servers
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
-VALUES 
-    ('US-001', 'US', 'New York - East Coast', 120, 'RTX 4090', 'idle', NOW()),
-    ('US-002', 'US', 'New York - East Coast', 121, 'RTX 4080', 'idle', NOW()),
-    ('US-003', 'US', 'Los Angeles - West Coast', 140, 'RTX 3090', 'idle', NOW()),
-    ('US-004', 'US', 'Los Angeles - West Coast', 142, 'RTX 3080', 'idle', NOW())
-ON CONFLICT (code) DO NOTHING;
-
--- South Korea: 2 servers
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
-VALUES 
-    ('KR-001', 'KR', 'Seoul - Data Center 1', 45, 'RTX 4090', 'idle', NOW()),
-    ('KR-002', 'KR', 'Seoul - Data Center 1', 46, 'RTX 4080', 'idle', NOW())
-ON CONFLICT (code) DO NOTHING;
-
--- Hong Kong: 2 servers
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
-VALUES 
-    ('HK-001', 'HK', 'Hong Kong - Data Center 1', 35, 'RTX 3090', 'idle', NOW()),
-    ('HK-002', 'HK', 'Hong Kong - Data Center 1', 36, 'RTX 3080', 'idle', NOW())
-ON CONFLICT (code) DO NOTHING;
-
--- Australia: 2 servers
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
-VALUES 
-    ('AU-001', 'AU', 'Sydney - Data Center 1', 185, 'RTX 3090', 'idle', NOW()),
-    ('AU-002', 'AU', 'Sydney - Data Center 1', 186, 'RTX 3080', 'idle', NOW())
-ON CONFLICT (code) DO NOTHING;
-
--- Vietnam: 2 servers
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
-VALUES 
-    ('VN-001', 'VN', 'Ho Chi Minh City - Data Center 1', 8, 'RTX 4090', 'idle', NOW()),
-    ('VN-002', 'VN', 'Hanoi - Data Center 1', 12, 'RTX 4080', 'idle', NOW())
-ON CONFLICT (code) DO NOTHING;
+INSERT INTO service_plans (code, name, description, price_cents, currency, duration_days, data_limit_gb, active)
+VALUES
+    ('basic', 'Basic', 'Personal cloud gaming access', 50000, 'VND', 30, 50, true),
+    ('pro', 'Pro', 'Higher quota for regular gaming sessions', 100000, 'VND', 30, 100, true),
+    ('premium', 'Premium', 'Unlimited data plan for heavy usage', 200000, 'VND', 30, NULL, true)
+ON CONFLICT (code) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    price_cents = EXCLUDED.price_cents,
+    currency = EXCLUDED.currency,
+    duration_days = EXCLUDED.duration_days,
+    data_limit_gb = EXCLUDED.data_limit_gb,
+    active = EXCLUDED.active;
 
 -- =====================================================
--- USERS (Admin & Demo Accounts)
+-- MACHINES
 -- =====================================================
--- Admin User: admin@example.com / Bn2908#2004 (hashed)
--- bcrypt hash for "Bn2908#2004": $2b$12$X7Q5/wN2Z3K9L4M8X5P2OuX3R4S5T6U7V8W9X0Y1Z2A3B4C5D6E7F8
-INSERT INTO users (email, display_name, role, status)
-VALUES 
-    ('admin@example.com', 'System Administrator', 'admin', 'active')
-ON CONFLICT (email) DO NOTHING;
+INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
+VALUES
+    ('SG-001', 'Singapore', 'Singapore - Data Center 1', 12, 'NVIDIA RTX 4090', 'idle', now()),
+    ('SG-002', 'Singapore', 'Singapore - Data Center 1', 13, 'NVIDIA RTX 4090', 'idle', now()),
+    ('SG-003', 'Singapore', 'Singapore - Data Center 2', 14, 'NVIDIA RTX 3090', 'idle', now()),
+    ('SG-004', 'Singapore', 'Singapore - Data Center 2', 15, 'NVIDIA RTX 3080', 'idle', now()),
+    ('JP-001', 'Japan', 'Tokyo - Data Center 1', 25, 'NVIDIA RTX 4090', 'busy', now()),
+    ('JP-002', 'Japan', 'Tokyo - Data Center 1', 26, 'NVIDIA RTX 4080', 'idle', now()),
+    ('JP-003', 'Japan', 'Osaka - Data Center 2', 28, 'NVIDIA RTX 3090', 'idle', now()),
+    ('JP-004', 'Japan', 'Osaka - Data Center 2', 29, 'NVIDIA RTX 3080', 'idle', now()),
+    ('US-001', 'United States', 'New York - East Coast', 120, 'NVIDIA RTX 4090', 'idle', now()),
+    ('US-002', 'United States', 'New York - East Coast', 121, 'NVIDIA RTX 4080', 'idle', now()),
+    ('US-003', 'United States', 'Los Angeles - West Coast', 140, 'NVIDIA RTX 3090', 'idle', now()),
+    ('US-004', 'United States', 'Los Angeles - West Coast', 142, 'NVIDIA RTX 3080', 'idle', now()),
+    ('KR-001', 'South Korea', 'Seoul - Data Center 1', 45, 'NVIDIA RTX 4090', 'idle', now()),
+    ('KR-002', 'South Korea', 'Seoul - Data Center 1', 46, 'NVIDIA RTX 4080', 'idle', now()),
+    ('HK-001', 'Hong Kong', 'Hong Kong - Data Center 1', 35, 'NVIDIA RTX 3090', 'idle', now()),
+    ('HK-002', 'Hong Kong', 'Hong Kong - Data Center 1', 36, 'NVIDIA RTX 3080', 'idle', now()),
+    ('AU-001', 'Australia', 'Sydney - Data Center 1', 185, 'NVIDIA RTX 3090', 'idle', now()),
+    ('AU-002', 'Australia', 'Sydney - Data Center 1', 186, 'NVIDIA RTX 3080', 'idle', now()),
+    ('VN-001', 'Vietnam', 'Ho Chi Minh City - Data Center 1', 8, 'NVIDIA RTX 4090', 'idle', now()),
+    ('VN-002', 'Vietnam', 'Hanoi - Data Center 1', 12, 'NVIDIA RTX 4080', 'idle', now())
+ON CONFLICT (code) DO UPDATE SET
+    region = EXCLUDED.region,
+    location = EXCLUDED.location,
+    ping_ms = EXCLUDED.ping_ms,
+    gpu = EXCLUDED.gpu,
+    status = EXCLUDED.status,
+    last_heartbeat = EXCLUDED.last_heartbeat;
+
+-- =====================================================
+-- USERS AND CREDENTIALS
+-- =====================================================
+INSERT INTO users (email, display_name, role, status, balance)
+VALUES
+    ('admin@example.com', 'System Administrator', 'admin', 'active', 0),
+    ('demo@example.com', 'Demo User Account', 'user', 'active', 500000)
+ON CONFLICT (email) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    role = EXCLUDED.role,
+    status = EXCLUDED.status,
+    balance = GREATEST(users.balance, EXCLUDED.balance);
 
 INSERT INTO credentials (user_id, password_hash)
-SELECT u.id, '$2b$12$X7Q5/wN2Z3K9L4M8X5P2OuX3R4S5T6U7V8W9X0Y1Z2A3B4C5D6E7F8'
+SELECT u.id, '$2b$12$PUKl.NkKcenbZ429HA5lAOn1NJpEcoryBoftIW5kCwp3b92MqdIWW'
 FROM users u
 WHERE u.email = 'admin@example.com'
-AND NOT EXISTS (SELECT 1 FROM credentials WHERE user_id = u.id);
-
--- Demo User: demo@example.com / demo123456 (hashed)
--- bcrypt hash for "demo123456": $2b$12$8Z3k5L9M7X4N2K6Q5W8P7O3R5S6T9U2V3W4X5Y6Z7A8B9C0D1E2F3G
-INSERT INTO users (email, display_name, role, status)
-VALUES 
-    ('demo@example.com', 'Demo User Account', 'user', 'active')
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
 INSERT INTO credentials (user_id, password_hash)
-SELECT u.id, '$2b$12$8Z3k5L9M7X4N2K6Q5W8P7O3R5S6T9U2V3W4X5Y6Z7A8B9C0D1E2F3G'
+SELECT u.id, '$2b$12$ha34lQE6VWr2MclRg1D/XeefqfwS1/usYejwPztruu.s8q3bSOiHC'
 FROM users u
 WHERE u.email = 'demo@example.com'
-AND NOT EXISTS (SELECT 1 FROM credentials WHERE user_id = u.id);
+ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
--- =====================================================
--- PLAYER PROFILES (Extended User Information)
--- =====================================================
--- Note: In production, phone & DOB should be encrypted
-INSERT INTO player_profiles (user_id, phone_enc, dob_enc, note_enc)
-SELECT u.id, 
-    'encrypted_phone_data'::bytea,
-    'encrypted_dob_data'::bytea,
-    'Demo account for testing'::bytea
-FROM users u
-WHERE u.email = 'demo@example.com'
-AND NOT EXISTS (SELECT 1 FROM player_profiles WHERE user_id = u.id);
-
--- =====================================================
--- IDENTITIES (OAuth Identities)
--- =====================================================
--- Demo Google OAuth identity
 INSERT INTO identities (user_id, provider, subject, access_token_enc, last_login_at)
-SELECT u.id, 'google', 'demo-google-subject-12345', 
-    'encrypted_token_data'::bytea, NOW()
+SELECT u.id, 'google', 'demo-google-subject-12345', 'encrypted_token_data'::bytea, now()
 FROM users u
 WHERE u.email = 'demo@example.com'
-AND NOT EXISTS (
-    SELECT 1 FROM identities WHERE user_id = u.id AND provider = 'google'
-);
+ON CONFLICT (provider, subject) DO UPDATE SET
+    user_id = EXCLUDED.user_id,
+    last_login_at = EXCLUDED.last_login_at;
 
 -- =====================================================
--- SESSIONS (Gaming Sessions)
+-- SUBSCRIPTIONS
 -- =====================================================
--- Demo session on Singapore server
-INSERT INTO sessions (user_id, machine_id, start_at, end_at, duration_sec, cost)
-SELECT u.id, m.id, NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour 30 minutes', 1800, 45000
-FROM users u, machines m
-WHERE u.email = 'demo@example.com' AND m.code = 'SG-001'
-AND NOT EXISTS (
-    SELECT 1 FROM sessions 
-    WHERE user_id = u.id AND start_at = (NOW() - INTERVAL '2 hours')
-);
-
--- Demo active session
-INSERT INTO sessions (user_id, machine_id, start_at, duration_sec, cost)
-SELECT u.id, m.id, NOW() - INTERVAL '30 minutes', NULL, NULL
-FROM users u, machines m
-WHERE u.email = 'demo@example.com' AND m.code = 'JP-001'
-AND NOT EXISTS (
-    SELECT 1 FROM sessions 
-    WHERE user_id = u.id AND start_at = (NOW() - INTERVAL '30 minutes')
-);
-
--- =====================================================
--- TOPUPS (Balance Top-ups)
--- =====================================================
--- Successful topup
-INSERT INTO topups (user_id, amount, currency, provider, provider_txn_id, status)
-SELECT u.id, 500000, 'VND', 'momo', 'MOMO-20260301-001', 'succeeded'
+INSERT INTO subscriptions (user_id, plan_id, status, start_at, end_at, auto_renew)
+SELECT u.id, sp.id, 'active', now() - INTERVAL '3 days', now() + INTERVAL '27 days', false
 FROM users u
+JOIN service_plans sp ON sp.code = 'basic'
 WHERE u.email = 'demo@example.com'
 AND NOT EXISTS (
-    SELECT 1 FROM topups 
-    WHERE user_id = u.id AND provider_txn_id = 'MOMO-20260301-001'
+    SELECT 1
+    FROM subscriptions s
+    WHERE s.user_id = u.id
+      AND s.status = 'active'
+      AND s.end_at > now()
 );
 
--- Pending topup
-INSERT INTO topups (user_id, amount, currency, provider, provider_txn_id, status)
-SELECT u.id, 1000000, 'VND', 'momo', 'MOMO-20260301-002', 'pending'
+-- =====================================================
+-- PAYMENTS AND TOP-UP LEDGER
+-- =====================================================
+INSERT INTO payments (user_id, order_id, request_id, amount, currency, provider, status, message, trans_id, extra_data, created_at, updated_at)
+SELECT u.id, 'SEED-MOMO-ORDER-001', 'SEED-MOMO-REQ-001', 500000, 'VND', 'momo', 'succeeded', 'Seed successful payment', 'MOMO-20260301-001', '', now() - INTERVAL '2 days', now() - INTERVAL '2 days'
 FROM users u
 WHERE u.email = 'demo@example.com'
+ON CONFLICT (order_id) DO NOTHING;
+
+INSERT INTO payments (user_id, order_id, request_id, amount, currency, provider, status, message, extra_data, created_at)
+SELECT u.id, 'SEED-MOMO-ORDER-002', 'SEED-MOMO-REQ-002', 100000, 'VND', 'momo', 'pending', 'Seed pending payment', '', now() - INTERVAL '1 day'
+FROM users u
+WHERE u.email = 'demo@example.com'
+ON CONFLICT (order_id) DO NOTHING;
+
+INSERT INTO topup_transactions (user_id, payment_id, amount, balance_before, balance_after, status, provider, description, trans_id, created_at, completed_at)
+SELECT u.id, p.id, p.amount, 0, 500000, 'succeeded', 'momo', 'Seed successful top-up', p.trans_id, p.created_at, p.updated_at
+FROM users u
+JOIN payments p ON p.order_id = 'SEED-MOMO-ORDER-001'
+WHERE u.email = 'demo@example.com'
+ON CONFLICT (payment_id) DO NOTHING;
+
+INSERT INTO topup_transactions (user_id, payment_id, amount, balance_before, balance_after, status, provider, description, created_at)
+SELECT u.id, p.id, p.amount, u.balance, u.balance, 'pending', 'momo', 'Seed pending top-up', p.created_at
+FROM users u
+JOIN payments p ON p.order_id = 'SEED-MOMO-ORDER-002'
+WHERE u.email = 'demo@example.com'
+ON CONFLICT (payment_id) DO NOTHING;
+
+-- =====================================================
+-- VPN SESSIONS
+-- =====================================================
+INSERT INTO vpn_sessions (user_id, subscription_id, machine_id, status, started_at, ended_at, ip_address, bytes_up, bytes_down)
+SELECT u.id, s.id, m.id, 'stopped', TIMESTAMPTZ '2026-03-01 10:00:00+07', TIMESTAMPTZ '2026-03-01 11:30:00+07', '10.8.0.12', 420000000, 2100000000
+FROM users u
+JOIN subscriptions s ON s.user_id = u.id AND s.status = 'active'
+JOIN machines m ON m.code = 'SG-001'
+WHERE u.email = 'demo@example.com'
 AND NOT EXISTS (
-    SELECT 1 FROM topups 
-    WHERE user_id = u.id AND provider_txn_id = 'MOMO-20260301-002'
+    SELECT 1
+    FROM vpn_sessions vs
+    WHERE vs.user_id = u.id
+      AND vs.machine_id = m.id
+      AND vs.started_at = TIMESTAMPTZ '2026-03-01 10:00:00+07'
+);
+
+INSERT INTO vpn_sessions (user_id, subscription_id, machine_id, status, started_at, ip_address, bytes_up, bytes_down)
+SELECT u.id, s.id, m.id, 'active', now() - INTERVAL '30 minutes', '10.8.0.24', 12000000, 85000000
+FROM users u
+JOIN subscriptions s ON s.user_id = u.id AND s.status = 'active'
+JOIN machines m ON m.code = 'JP-001'
+WHERE u.email = 'demo@example.com'
+AND NOT EXISTS (
+    SELECT 1
+    FROM vpn_sessions vs
+    WHERE vs.machine_id = m.id
+      AND vs.status = 'active'
+      AND vs.ended_at IS NULL
 );
 
 -- =====================================================
--- MAINTENANCE_LOGS (Machine Maintenance)
+-- MACHINE LOGS AND ADMIN SETTINGS
 -- =====================================================
-INSERT INTO maintenance_logs (machine_id, action, note)
-SELECT m.id, 'startup', 'Server startup - OK'
+INSERT INTO machine_logs (machine_id, level, message)
+SELECT m.id, 'info', 'Seed startup health check completed'
 FROM machines m
 WHERE m.code = 'SG-001'
 AND NOT EXISTS (
-    SELECT 1 FROM maintenance_logs WHERE machine_id = m.id AND action = 'startup'
+    SELECT 1
+    FROM machine_logs ml
+    WHERE ml.machine_id = m.id
+      AND ml.message = 'Seed startup health check completed'
 );
 
-INSERT INTO maintenance_logs (machine_id, action, note)
-SELECT m.id, 'health_check', 'GPU and network connectivity verified'
+INSERT INTO machine_logs (machine_id, level, message)
+SELECT m.id, 'info', 'Seed active demo session attached'
 FROM machines m
 WHERE m.code = 'JP-001'
 AND NOT EXISTS (
-    SELECT 1 FROM maintenance_logs WHERE machine_id = m.id AND action = 'health_check'
+    SELECT 1
+    FROM machine_logs ml
+    WHERE ml.machine_id = m.id
+      AND ml.message = 'Seed active demo session attached'
 );
 
--- =====================================================
--- AUDIT_LOGS (System Audit Trail)
--- =====================================================
--- User login audit
-INSERT INTO audit_logs (actor_id, action, target, meta)
-SELECT u.id, 'LOGIN', 'demo@example.com', 
-    ('{"method": "email", "ip": "192.0.2.1", "user_agent": "Mozilla/5.0"}'::jsonb)
-FROM users u
-WHERE u.email = 'demo@example.com'
-AND NOT EXISTS (
-    SELECT 1 FROM audit_logs 
-    WHERE actor_id = u.id AND action = 'LOGIN' LIMIT 1
-);
-
--- Admin session activity audit
-INSERT INTO audit_logs (actor_id, action, target, meta)
-SELECT u.id, 'SESSION_CREATE', 'SG-001', 
-    ('{"duration": "1h30m", "cost": 45000, "status": "completed"}'::jsonb)
-FROM users u
-WHERE u.email = 'demo@example.com'
-AND NOT EXISTS (
-    SELECT 1 FROM audit_logs 
-    WHERE action = 'SESSION_CREATE' AND target = 'SG-001' LIMIT 1
-);
+INSERT INTO admin_settings (
+    password_min_length,
+    password_require_upper,
+    password_require_lower,
+    password_require_digit,
+    lockout_max_attempts,
+    lockout_minutes,
+    min_topup_amount,
+    session_timeout_hours,
+    snapshot_retention_count
+)
+SELECT 8, true, true, true, 5, 10, 10000, 24, 1
+WHERE NOT EXISTS (SELECT 1 FROM admin_settings);
 
 -- =====================================================
--- LOGIN_CHALLENGES (Multi-factor Authentication)
+-- SUMMARY
 -- =====================================================
--- Example MFA challenge
-INSERT INTO login_challenges (user_id, token_hash, expires_at, user_agent, ip)
-SELECT u.id, 
-    digest('challenge-token-12345', 'sha256'),
-    NOW() + INTERVAL '15 minutes',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-    '192.0.2.1'::inet
-FROM users u
-WHERE u.email = 'demo@example.com'
-AND NOT EXISTS (
-    SELECT 1 FROM login_challenges WHERE user_id = u.id AND consumed_at IS NULL
-);
-
--- =====================================================
--- SUMMARY OF INITIALIZED DATA
--- =====================================================
-SELECT 'Database seed completed successfully' as "Status";
-SELECT '' as "Spacer";
-
-SELECT 'Tables & Data' as "Category", COUNT(*) as "Count" FROM machines WHERE status IS NOT NULL
+SELECT 'Database seed completed successfully' AS "Status";
+SELECT 'Machines' AS "Category", COUNT(*) AS "Count" FROM machines
 UNION ALL
 SELECT 'Users', COUNT(*) FROM users
 UNION ALL
-SELECT 'Credentials', COUNT(*) FROM credentials
+SELECT 'Service Plans', COUNT(*) FROM service_plans
 UNION ALL
-SELECT 'OAuth Identities', COUNT(*) FROM identities
+SELECT 'Subscriptions', COUNT(*) FROM subscriptions
 UNION ALL
-SELECT 'Player Profiles', COUNT(*) FROM player_profiles
+SELECT 'Payments', COUNT(*) FROM payments
 UNION ALL
-SELECT 'Sessions', COUNT(*) FROM sessions
+SELECT 'Top-up Transactions', COUNT(*) FROM topup_transactions
 UNION ALL
-SELECT 'Top-ups', COUNT(*) FROM topups
+SELECT 'VPN Sessions', COUNT(*) FROM vpn_sessions
 UNION ALL
-SELECT 'Maintenance Logs', COUNT(*) FROM maintenance_logs
+SELECT 'Machine Logs', COUNT(*) FROM machine_logs
 UNION ALL
-SELECT 'Audit Logs', COUNT(*) FROM audit_logs
-UNION ALL
-SELECT 'Login Challenges', COUNT(*) FROM login_challenges
+SELECT 'Admin Settings', COUNT(*) FROM admin_settings
 ORDER BY "Category";
-
-SELECT '' as "Spacer";
-SELECT 'Demo Accounts:' as "Info";
-SELECT 'admin@example.com / Bn2908#2004' as "Admin";
-SELECT 'demo@example.com / demo123456' as "Demo User";
-
--- =====================================================
--- End of Complete Database Setup
--- =====================================================
--- Schema: 11 Tables + 2 Views
--- Seed Data: 20 Machines + 2 Users + Sample Data
--- Created: March 2026

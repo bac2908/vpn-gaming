@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     jwt_expire_min: int = 30
     app_base_url: str = "http://localhost:8000"
 
+    # OpenVPN profile generation
+    openvpn_remote_host: str = "vpn-gateway.local"
+    openvpn_remote_port: int = 1194
+    openvpn_protocol: str = "udp"
+    openvpn_ca_cert: Optional[str] = None
+    openvpn_tls_crypt_key: Optional[str] = None
+
     # Logging
     log_level: str = "INFO"
     log_json: bool = False

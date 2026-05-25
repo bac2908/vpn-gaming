@@ -34,6 +34,11 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class UserProfileUpdateRequest(BaseModel):
+    display_name: str | None = None
+    current_password: str
+
+
 class UserOut(BaseModel):
     id: UUID
     email: EmailStr
@@ -115,6 +120,9 @@ class SessionOut(BaseModel):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     ip_address: str | None = None
+    vpn_online: bool = False
+    sunshine_paired: bool = False
+    moonlight_ready: bool = False
 
     class Config:
         orm_mode = True

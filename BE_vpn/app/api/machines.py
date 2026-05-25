@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -38,6 +39,59 @@ def list_machines(
         max_ping=max_ping,
         sort=sort,
     )
+
+
+@router.get("/sessions/active", response_model=schemas.SessionOut | None)
+def get_active_user_session(
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    return machine_service.get_active_user_session(current_user)
+
+
+@router.post("/sessions/{session_id}/stop", response_model=schemas.SessionOut)
+def stop_user_session(
+    session_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    return machine_service.stop_user_session(session_id, current_user)
+
+
+@router.get("/sessions/{session_id}/ovpn")
+def download_session_ovpn(
+    session_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    filename, content = machine_service.build_session_ovpn(session_id, current_user)
+    return Response(
+        content=content,
+        media_type="application/x-openvpn-profile",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/sessions/{session_id}/vpn/check", response_model=schemas.SessionOut)
+def check_session_vpn(
+    session_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    return machine_service.verify_vpn_connection(session_id, current_user)
+
+
+@router.post("/sessions/{session_id}/sunshine/pair", response_model=schemas.SessionOut)
+def pair_session_sunshine(
+    session_id: UUID,
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    return machine_service.mark_sunshine_paired(session_id, current_user)
 
 
 @router.get("/{machine_id}", response_model=schemas.MachineDetailOut)

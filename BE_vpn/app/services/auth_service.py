@@ -259,6 +259,24 @@ class AuthService:
         self.repo.commit()
         return {"message": "Doi mat khau thanh cong"}
 
+    def update_profile(self, user: models.User, payload: schemas.UserProfileUpdateRequest) -> schemas.UserOut:
+        if not user.credential:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay thong tin dang nhap")
+
+        if not security.verify_password(payload.current_password, user.credential.password_hash):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Mat khau hien tai khong dung")
+
+        if payload.display_name is not None:
+            display_name = payload.display_name.strip()
+            if not display_name:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ten hien thi khong hop le")
+            user.display_name = display_name
+
+        self.repo.db.add(user)
+        self.repo.commit()
+        self.repo.refresh(user)
+        return self.to_user_out(user)
+
     def verify_email(self, token: str) -> dict:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         record = self.repo.get_valid_email_verification(token_hash)

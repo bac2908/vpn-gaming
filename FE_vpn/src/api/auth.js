@@ -35,6 +35,14 @@ export async function changePassword(email, old_password, new_password) {
     })
 }
 
+export async function updateProfile(payload, token) {
+    return request('/auth/profile', {
+        method: 'PATCH',
+        body: payload,
+        token,
+    })
+}
+
 export async function fetchMe(token) {
     return request('/auth/me', { token })
 }

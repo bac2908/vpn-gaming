@@ -214,6 +214,18 @@ class VpnSession(Base):
     machine = relationship("Machine", back_populates="vpn_sessions")
     machine_logs = relationship("MachineLog", back_populates="session")
 
+    @property
+    def vpn_online(self) -> bool:
+        return bool(self.ip_address)
+
+    @property
+    def sunshine_paired(self) -> bool:
+        return any(log.message == "sunshine_paired" for log in self.machine_logs)
+
+    @property
+    def moonlight_ready(self) -> bool:
+        return self.vpn_online and self.sunshine_paired
+
 
 class MachineLog(Base):
     __tablename__ = "machine_logs"

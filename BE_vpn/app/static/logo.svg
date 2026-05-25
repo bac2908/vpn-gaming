@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Neon gradient matched with FE VPN design tokens -->
+    <linearGradient id="neon-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F45D48" />
+      <stop offset="100%" stop-color="#00B8D9" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  
+  <!-- Outer Shield representing Secure VPN -->
+  <path d="M256 32L80 104v140c0 110 75 210 176 236 101-26 176-126 176-236V104L256 32z" 
+        fill="none" 
+        stroke="url(#neon-gradient)" 
+        stroke-width="28" 
+        stroke-linejoin="round"
+        filter="url(#glow)"/>
+        
+  <!-- Center Gamepad representing Premium Gaming -->
+  <path d="M376 190H136c-26.5 0-48 21.5-48 48v80c0 26.5 21.5 48 48 48h240c26.5 0 48-21.5 48-48v-80c0-26.5-21.5-48-48-48zm-180 84h-24v24c0 6.6-5.4 12-12 12s-12-5.4-12-12v-24h-24c-6.6 0-12-5.4-12-12s5.4-12 12-12h24v-24c0-6.6 5.4-12 12-12s12 5.4 12 12v24h24c6.6 0 12 5.4 12 12s-5.4 12-12 12zm128 24c-13.3 0-24-10.7-24-24s10.7-24 24-24 24 10.7 24 24-10.7 24-24 24zm48-32c-13.3 0-24-10.7-24-24s10.7-24 24-24 24 10.7 24 24-10.7 24-24 24z" 
+        fill="url(#neon-gradient)"/>
+</svg>

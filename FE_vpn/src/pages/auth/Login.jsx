@@ -1,19 +1,19 @@
-import { useEffect, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { login as loginApi, normalizeUser } from '../../api/auth'
 import { googleLogin } from '../../api/oauth'
+import { buildRegisterRedirect, getRedirectFromSearch } from '../../utils/redirect'
+import AuthSessionNotice from './AuthSessionNotice'
 
 function Login({ ctx }) {
+    const [searchParams] = useSearchParams()
+    const navigate = useNavigate()
+    const userRedirect = getRedirectFromSearch(searchParams, 'user')
+    const adminRedirect = getRedirectFromSearch(searchParams, 'admin')
     const [form, setForm] = useState({ email: '', password: '' })
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [loadingGoogle, setLoadingGoogle] = useState(false)
-
-    // Khi người dùng vào trang đăng nhập, luôn reset phiên cũ để tránh tự redirect vào app
-    useEffect(() => {
-        if (ctx?.setToken) ctx.setToken(null)
-        if (ctx?.setUser) ctx.setUser(null)
-    }, [])
 
     const parseJwt = (token) => {
         try {
@@ -39,15 +39,16 @@ function Login({ ctx }) {
         loginApi(form.email, form.password)
             .then((data) => {
                 const payload = parseJwt(data.access_token)
-                ctx.setToken(data.access_token)
-                ctx.setUser(
+                const nextUser =
                     normalizeUser(data.user, form.email) || {
                         id: payload?.sub || 'unknown',
                         name: form.email.split('@')[0] || 'User',
                         email: form.email,
                         role: 'user',
-                    },
-                )
+                    }
+                ctx.setToken(data.access_token)
+                ctx.setUser(nextUser)
+                navigate(nextUser.role === 'admin' ? adminRedirect : userRedirect, { replace: true })
             })
             .catch((err) => {
                 // Thêm thông báo lỗi chi tiết nếu cần
@@ -60,6 +61,7 @@ function Login({ ctx }) {
         setError('')
         setLoadingGoogle(true)
         try {
+            window.sessionStorage?.setItem('post_login_redirect', userRedirect)
             const data = await googleLogin()
             if (data?.auth_url) {
                 window.location.href = data.auth_url
@@ -73,9 +75,17 @@ function Login({ ctx }) {
         }
     }
 
-    // Kiểm tra quyền truy cập
-    if (ctx?.user?.role === 'user') return <Navigate to="/app" replace />
-    if (ctx?.user?.role === 'admin') return <Navigate to="/admin" replace />
+    const hasSession = ctx?.user?.role === 'user' || ctx?.user?.role === 'admin'
+    if (hasSession) {
+        return (
+            <AuthSessionNotice
+                user={ctx.user}
+                continueTo={ctx.user.role === 'admin' ? adminRedirect : userRedirect}
+                onSwitchAccount={ctx.clearAuth}
+                title="Bạn đã đăng nhập"
+            />
+        )
+    }
 
     return (
         <div className="auth">
@@ -117,7 +127,7 @@ function Login({ ctx }) {
                         {loadingGoogle ? 'Đang mở Google...' : 'Đăng nhập với Google'}
                     </button>
                     <div className="row-between small">
-                        <Link to="/register" className="muted">
+                        <Link to={buildRegisterRedirect(userRedirect)} className="muted">
                             Đăng ký
                         </Link>
                         <Link to="/forgot" className="muted">

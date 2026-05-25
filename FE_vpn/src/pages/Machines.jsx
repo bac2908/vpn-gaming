@@ -1,6 +1,32 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getMachine, listMachines, resumeMachine, startMachine } from '../api/machines'
+import { listMachines, getMachine, startMachine, resumeMachine } from '../api/machines'
+const getCountryData = (region) => {
+    const r = String(region || '').toLowerCase()
+    if (r.includes('singapore') || r.includes('sg')) {
+        return { flag: '🇸🇬', code: 'sg', name: 'Singapore', flagUrl: 'https://flagcdn.com/sg.svg' }
+    }
+    if (
+        r.includes('vietnam') || r.includes('việt nam') || r.includes('vn') ||
+        r.includes('hanoi') || r.includes('hà nội') || r.includes('hcmc') ||
+        r.includes('hồ chí minh') || r.includes('ho chi minh') || r.includes('saigon') || r.includes('sài gòn')
+    ) {
+        return { flag: '🇻🇳', code: 'vn', name: 'Việt Nam', flagUrl: 'https://flagcdn.com/vn.svg' }
+    }
+    if (r.includes('japan') || r.includes('nhat') || r.includes('jp') || r.includes('tokyo')) {
+        return { flag: '🇯🇵', code: 'jp', name: 'Japan', flagUrl: 'https://flagcdn.com/jp.svg' }
+    }
+    if (r.includes('usa') || r.includes('us') || r.includes('mỹ') || r.includes('america')) {
+        return { flag: '🇺🇸', code: 'us', name: 'USA', flagUrl: 'https://flagcdn.com/us.svg' }
+    }
+    if (r.includes('hong kong') || r.includes('hongkong') || r.includes('hk')) {
+        return { flag: '🇭🇰', code: 'hk', name: 'Hong Kong', flagUrl: 'https://flagcdn.com/hk.svg' }
+    }
+    if (r.includes('korea') || r.includes('kr') || r.includes('seoul')) {
+        return { flag: '🇰🇷', code: 'kr', name: 'Korea', flagUrl: 'https://flagcdn.com/kr.svg' }
+    }
+    return { flag: '🌐', code: null, name: region || 'Global', flagUrl: null }
+}
 
 function Machines({ ctx }) {
     const [machines, setMachines] = useState([])
@@ -13,6 +39,7 @@ function Machines({ ctx }) {
     const [filters, setFilters] = useState({
         region: '',
         gpu: '',
+        minPing: '',
         maxPing: '',
         sort: 'best',
         status: 'idle',
@@ -27,13 +54,16 @@ function Machines({ ctx }) {
 
         async function load() {
             try {
+                const minPing = filters.minPing === '' ? undefined : Number(filters.minPing)
+                const maxPing = filters.maxPing === '' ? undefined : Number(filters.maxPing)
                 const data = await listMachines({
                     page,
                     page_size: pageSize,
                     region: filters.region,
                     gpu: filters.gpu,
                     status: filters.status || undefined,
-                    max_ping: filters.maxPing || undefined,
+                    min_ping: Number.isFinite(minPing) ? minPing : undefined,
+                    max_ping: Number.isFinite(maxPing) ? maxPing : undefined,
                     sort: filters.sort,
                 })
                 if (!cancelled) {
@@ -142,6 +172,19 @@ function Machines({ ctx }) {
                         />
                     </label>
                     <label className="field">
+                        Ping tối thiểu (ms)
+                        <input
+                            type="number"
+                            min="0"
+                            placeholder="VD: 20"
+                            value={filters.minPing}
+                            onChange={(e) => {
+                                setFilters((prev) => ({ ...prev, minPing: e.target.value }))
+                                setPage(1)
+                            }}
+                        />
+                    </label>
+                    <label className="field">
                         Ping tối đa (ms)
                         <input
                             type="number"
@@ -204,43 +247,146 @@ function Machines({ ctx }) {
                         <p className="muted">Chưa có máy nào từ hệ thống.</p>
                     </div>
                 )}
-                {!loading && display.map((m) => (
-                    <div key={m.id} className="card border">
-                        <div className="row-between">
-                            <div>
-                                <p className="muted">{m.region || 'N/A'}</p>
-                                <h4>{m.name || m.code}</h4>
+                {!loading && display.map((m) => {
+                    const country = getCountryData(m.region)
+                    const isIdle = m.status === 'idle'
+                    const ping = m.ping_ms ?? m.ping ?? 0
+
+                    let pingClass = 'ping-high'
+                    let pingLabel = 'Chậm'
+                    if (ping > 0 && ping < 30) {
+                        pingClass = 'ping-low'
+                        pingLabel = 'Cực nhanh'
+                    } else if (ping >= 30 && ping <= 80) {
+                        pingClass = 'ping-mid'
+                        pingLabel = 'Khá tốt'
+                    }
+
+                    return (
+                        <div key={m.id} className="machine-premium-card card">
+                            {/* Khối Ảnh Visual & Badge nổi */}
+                            <div className="machine-card-visual-wrapper">
+                                {/* Đồ họa SVG Server */}
+                                <svg viewBox="0 0 300 150" className="machine-svg-graphic">
+                                    <defs>
+                                        <linearGradient id={`server-grad-${m.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stopColor="#1a1a35" />
+                                            <stop offset="100%" stopColor="#0b0b18" />
+                                        </linearGradient>
+                                        <linearGradient id={`led-grad-${m.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                                            <stop offset="0%" stopColor="#F45D48" />
+                                            <stop offset="100%" stopColor="#00B8D9" />
+                                        </linearGradient>
+                                        <filter id={`glow-led-${m.id}`} x="-20%" y="-20%" width="140%" height="140%">
+                                            <feGaussianBlur stdDeviation="3" result="blur" />
+                                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                        </filter>
+                                    </defs>
+                                    <rect width="300" height="150" rx="12" fill={`url(#server-grad-${m.id})`} />
+                                    <line x1="20" y1="35" x2="280" y2="35" stroke="#242442" strokeWidth="2" />
+                                    <line x1="20" y1="75" x2="280" y2="75" stroke="#242442" strokeWidth="2" />
+                                    <line x1="20" y1="115" x2="280" y2="115" stroke="#242442" strokeWidth="2" />
+
+                                    {/* CPU / Glow node */}
+                                    <rect x="245" y="45" width="22" height="22" rx="4" fill="#090a18" stroke="#313159" strokeWidth="1" />
+                                    <circle cx="256" cy="56" r="4.5" fill="#00B8D9" filter={`url(#glow-led-${m.id})`} />
+
+                                    <rect x="245" y="85" width="22" height="22" rx="4" fill="#090a18" stroke="#313159" strokeWidth="1" />
+                                    <circle cx="256" cy="96" r="4.5" fill="#F45D48" filter={`url(#glow-led-${m.id})`} />
+
+                                    <g opacity="0.9">
+                                        {/* Rack Slot 1 */}
+                                        <rect x="25" y="48" width="165" height="16" rx="4" fill="#101021" stroke="#252549" strokeWidth="1" />
+                                        <rect x="35" y="54" width="70" height="4" rx="2" fill={`url(#led-grad-${m.id})`} />
+                                        <circle cx="130" cy="56" r="3.5" fill="#00ffcc" />
+                                        <circle cx="145" cy="56" r="3.5" fill="#00ffcc" />
+                                        <circle cx="160" cy="56" r="3.5" fill="#ff3b30" />
+
+                                        {/* Rack Slot 2 */}
+                                        <rect x="25" y="88" width="165" height="16" rx="4" fill="#101021" stroke="#252549" strokeWidth="1" />
+                                        <rect x="35" y="94" width="90" height="4" rx="2" fill={`url(#led-grad-${m.id})`} />
+                                        <circle cx="130" cy="96" r="3.5" fill="#00ffcc" />
+                                        <circle cx="145" cy="96" r="3.5" fill="#ffcc00" />
+                                        <circle cx="160" cy="96" r="3.5" fill="#00ffcc" />
+                                    </g>
+
+                                    {/* Lưới Grid */}
+                                    <path d="M 0,10 L 300,10 M 0,20 L 300,20 M 0,30 L 300,30 M 0,40 L 300,40 M 0,50 L 300,50 M 0,60 L 300,60 M 0,70 L 300,70 M 0,80 L 300,80 M 0,90 L 300,90 M 0,100 L 300,100 M 0,110 L 300,110 M 0,120 L 300,120 M 0,130 L 300,130 M 0,140 L 300,140" stroke="#ffffff" strokeWidth="1" opacity="0.015" />
+                                    <path d="M 10,0 L 10,150 M 20,0 L 20,150 M 30,0 L 30,150 M 40,0 L 40,150 M 50,0 L 50,150 M 60,0 L 60,150 M 70,0 L 70,150 M 80,0 L 80,150 M 90,0 L 90,150 M 100,0 L 100,150 M 110,0 L 110,150 M 120,0 L 120,150 M 130,0 L 130,150 M 140,0 L 140,150 M 150,0 L 150,150 M 160,0 L 160,150 M 170,0 L 170,150 M 180,0 L 180,150 M 190,0 L 190,150 M 200,0 L 200,150 M 210,0 L 210,150 M 220,0 L 220,150 M 230,0 L 230,150 M 240,0 L 240,150 M 250,0 L 250,150 M 260,0 L 260,150 M 270,0 L 270,150 M 280,0 L 280,150 M 290,0 L 290,150" stroke="#ffffff" strokeWidth="1" opacity="0.015" />
+                                </svg>
+
+                                {/* Country Badge nổi bên góc */}
+                                <div className="machine-floating-flag" title={country.name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {country.flagUrl ? (
+                                        <img
+                                            src={country.flagUrl}
+                                            alt={country.name}
+                                            style={{ width: '20px', height: '14px', objectFit: 'cover', borderRadius: '2px', display: 'inline-block', verticalAlign: 'middle', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+                                        />
+                                    ) : (
+                                        <span className="flag-icon" style={{ display: 'inline-block', verticalAlign: 'middle' }}>{country.flag}</span>
+                                    )}
+                                    <span className="flag-label">{country.name}</span>
+                                </div>
+
+                                {/* Badge Trạng thái nổi */}
+                                <div className={`machine-floating-status ${isIdle ? 'idle' : 'busy'}`}>
+                                    {isIdle && <span className="pulsing-dot" />}
+                                    <span>{isIdle ? 'Trống' : 'Bận'}</span>
+                                </div>
                             </div>
-                            <span className={`badge ${m.status === 'idle' ? 'success' : 'warning'}`}>
-                                {m.status === 'idle' ? 'Trống' : 'Đang bận'}
-                            </span>
+
+                            {/* Khối Thông tin máy */}
+                            <div className="machine-card-content">
+                                <div className="machine-card-title-row">
+                                    <h3 className="machine-name">{m.location || m.name || m.code}</h3>
+                                    <span className="machine-code-pill">{m.code || m.id?.slice(0, 8)}</span>
+                                </div>
+
+                                {/* Khung GPU chuyên nghiệp */}
+                                <div className="machine-gpu-box">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="gpu-icon">
+                                        <rect x="2" y="2" width="20" height="20" rx="4" />
+                                        <path d="M6 12h12" />
+                                        <path d="M12 6v12" />
+                                    </svg>
+                                    <span className="gpu-label">{m.spec || m.gpu || 'Core i7 · RAM 16GB'}</span>
+                                </div>
+
+                                {/* Khối Ping & Network */}
+                                <div className="machine-network-row">
+                                    <span className="network-label">Độ trễ (Ping)</span>
+                                    <div className={`ping-indicator-pill ${pingClass}`}>
+                                        <span className="ping-dot" />
+                                        <span className="ping-val">{ping > 0 ? `${ping} ms` : '? ms'}</span>
+                                        <span className="ping-txt">({pingLabel})</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Các nút Hành động */}
+                            <div className="machine-card-actions">
+                                <button
+                                    className="btn primary action-start"
+                                    onClick={() => handleStart(m.id)}
+                                    disabled={!isIdle}
+                                >
+                                    🎮 Bắt đầu
+                                </button>
+                                <button
+                                    className="btn secondary action-resume"
+                                    onClick={() => handleResume(m.id)}
+                                    disabled={!isIdle}
+                                >
+                                    💾 Tiếp tục snapshot
+                                </button>
+                                <button className="btn ghost action-detail" onClick={() => handleDetail(m.id)}>
+                                    ℹ️ Chi tiết
+                                </button>
+                            </div>
                         </div>
-                        <p className="muted">{m.spec || m.gpu || 'Chưa có mô tả'}</p>
-                        <div className="row-between">
-                            <p className="muted">Ping: {m.ping_ms ?? m.ping ?? '?'} ms</p>
-                            <span className="pill ghost">{m.code || m.id}</span>
-                        </div>
-                        <div className="actions">
-                            <button
-                                className="btn primary"
-                                onClick={() => handleStart(m.id)}
-                                disabled={m.status !== 'idle'}
-                            >
-                                Bắt đầu
-                            </button>
-                            <button
-                                className="btn secondary"
-                                onClick={() => handleResume(m.id)}
-                                disabled={m.status !== 'idle'}
-                            >
-                                Tiếp tục snapshot
-                            </button>
-                            <button className="btn ghost" onClick={() => handleDetail(m.id)}>
-                                Xem chi tiết
-                            </button>
-                        </div>
-                    </div>
-                ))}
+                    )
+                })}
             </div>
 
             {error && <p className="muted">{error}</p>}
@@ -312,16 +458,6 @@ function Machines({ ctx }) {
                         Sau
                     </button>
                 </div>
-            </div>
-
-            <div className="card">
-                <h4>Chính sách & bảo mật</h4>
-                <ul className="bullet">
-                    <li>Form auth có rate-limit giả lập, lockout tạm thời, policy mật khẩu.</li>
-                    <li>JWT/refresh dự kiến để HttpOnly; tránh lưu token ở localStorage.</li>
-                    <li>CSRF token với các form nhạy cảm (mock sẵn trong auth pages).</li>
-                    <li>Chỉ hiển thị thông tin tối thiểu cho user; log kỹ thuật ở trang Hỗ trợ.</li>
-                </ul>
             </div>
         </div>
     )

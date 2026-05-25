@@ -64,6 +64,17 @@ psql -U vpn_user -d vpn_app -f init.sql
 psql -U vpn_user -d vpn_app -f seeds/seed.sql
 ```
 
+## Nang cap database dang co
+
+Neu database da duoc tao tu schema cu, chay migration canh chinh schema truoc khi seed/chay backend:
+
+```bash
+psql -U vpn_user -d vpn_app -f migrations/versions/20260518_align_application_schema.sql
+```
+
+Migration nay bo sung cac bang backend dang dung nhu `service_plans`, `subscriptions`, `payments`,
+`vpn_sessions`, `topup_transactions`, `admin_settings`, them `users.balance`, index va constraint can thiet.
+
 ## Khoi tao DB bang Docker (chi database)
 
 Tu thu muc `database/`:
@@ -107,6 +118,7 @@ Script auto backup co xoa file qua han theo `BACKUP_RETENTION_DAYS` (mac dinh: 1
 - `migrations/env.py`
 - `migrations/script.py.mako`
 - `migrations/versions/`
+- `migrations/versions/20260518_align_application_schema.sql`
 
 Bo khung nay san sang de tich hop Alembic.
 

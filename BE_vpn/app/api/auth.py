@@ -47,6 +47,15 @@ def change_password(payload: schemas.ChangePasswordRequest, auth_service: AuthSe
     return auth_service.change_password(payload)
 
 
+@router.patch("/profile", response_model=schemas.UserOut)
+def update_profile(
+    payload: schemas.UserProfileUpdateRequest,
+    current_user: models.User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    return auth_service.update_profile(current_user, payload)
+
+
 @router.get("/verify-email")
 def verify_email(
     token: str = Query(..., description="Token xac thuc email"),

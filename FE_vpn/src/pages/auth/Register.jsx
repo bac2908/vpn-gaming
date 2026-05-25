@@ -1,18 +1,17 @@
-import { useEffect, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { register as registerApi } from '../../api/auth'
+import { buildLoginRedirect, getRedirectFromSearch } from '../../utils/redirect'
+import AuthSessionNotice from './AuthSessionNotice'
 
 function Register({ ctx }) {
+    const [searchParams] = useSearchParams()
+    const userRedirect = getRedirectFromSearch(searchParams, 'user')
+    const adminRedirect = getRedirectFromSearch(searchParams, 'admin')
     const [form, setForm] = useState({ email: '', fullName: '', password: '', confirm: '' })
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [success, setSuccess] = useState('')
-
-    // Khi vào trang đăng ký, reset phiên cũ để tránh tự redirect do token lưu cache
-    useEffect(() => {
-        if (ctx?.setToken) ctx.setToken(null)
-        if (ctx?.setUser) ctx.setUser(null)
-    }, [])
 
     const onSubmit = (e) => {
         e.preventDefault()
@@ -30,10 +29,16 @@ function Register({ ctx }) {
             .finally(() => setLoading(false))
     }
 
-    // Nếu đã đăng nhập sẵn thì điều hướng, nhưng giữ nguyên trang khi vừa đăng ký để hiện thông báo
     const hasSession = ctx?.user?.role === 'user' || ctx?.user?.role === 'admin'
     if (hasSession && !success) {
-        return <Navigate to={ctx?.user?.role === 'admin' ? '/admin' : '/app'} replace />
+        return (
+            <AuthSessionNotice
+                user={ctx.user}
+                continueTo={ctx.user.role === 'admin' ? adminRedirect : userRedirect}
+                onSwitchAccount={ctx.clearAuth}
+                title="Bạn đang đăng nhập bằng tài khoản khác"
+            />
+        )
     }
 
     return (
@@ -93,7 +98,7 @@ function Register({ ctx }) {
                         {loading ? 'Đang đăng ký...' : 'Đăng ký'}
                     </button>
                     <div className="row-between small">
-                        <Link to="/login" className="muted">
+                        <Link to={buildLoginRedirect(userRedirect)} className="muted">
                             Đã có tài khoản
                         </Link>
                         <Link to="/forgot" className="muted">

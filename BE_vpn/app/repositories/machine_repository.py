@@ -78,6 +78,40 @@ class MachineRepository:
             .first()
         )
 
+    def get_active_session_for_user(self, user_id: UUID) -> models.VpnSession | None:
+        return (
+            self.db.query(models.VpnSession)
+            .filter(
+                models.VpnSession.user_id == user_id,
+                models.VpnSession.status == "active",
+                models.VpnSession.ended_at.is_(None),
+            )
+            .order_by(models.VpnSession.started_at.desc())
+            .first()
+        )
+
+    def get_session_by_id(self, session_id: UUID) -> models.VpnSession | None:
+        return self.db.query(models.VpnSession).filter(models.VpnSession.id == session_id).first()
+
+    def has_session_log(self, session_id: UUID, message: str) -> bool:
+        return (
+            self.db.query(models.MachineLog)
+            .filter(models.MachineLog.session_id == session_id, models.MachineLog.message == message)
+            .first()
+            is not None
+        )
+
+    def add_session_log(
+        self,
+        machine_id: UUID,
+        session_id: UUID,
+        message: str,
+        level: str = "info",
+    ) -> models.MachineLog:
+        log = models.MachineLog(machine_id=machine_id, session_id=session_id, message=message, level=level)
+        self.db.add(log)
+        return log
+
     def get_last_ended_session_for_user_machine(self, machine_id: UUID, user_id: UUID) -> models.VpnSession | None:
         return (
             self.db.query(models.VpnSession)
