@@ -3,8 +3,8 @@
   grid-template-columns: 260px 1fr;
   min-height: 100vh;
   --sidenav-width: 260px;
-  --topbar-offset: 24px;
-  --topbar-height: 96px;
+  --topbar-offset: 0px;
+  --topbar-height: 124px;
 }
 
 .sidenav {
@@ -72,7 +72,7 @@
 }
 
 .app-main {
-  padding: 24px;
+  padding: 0 24px 24px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -83,18 +83,25 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  background: rgba(255, 255, 255, 0.02);
+  background:
+    linear-gradient(135deg, rgba(22, 25, 34, 0.98), rgba(13, 28, 32, 0.98)),
+    var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 16px 18px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
 }
 
 .app-shell .topbar {
   position: fixed;
   top: var(--topbar-offset);
-  left: calc(var(--sidenav-width) + var(--topbar-offset));
-  right: var(--topbar-offset);
+  left: var(--sidenav-width);
+  right: 0;
   z-index: 80;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .topbar-actions {
@@ -285,12 +292,18 @@
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 10px 16px;
   cursor: pointer;
   color: #fff;
   background: rgba(255, 255, 255, 0.06);
+  line-height: 1.2;
+  text-align: center;
   transition: transform 0.15s, border 0.2s;
 }
 
@@ -344,8 +357,48 @@
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: minmax(180px, 1.1fr) minmax(180px, 1.1fr) minmax(120px, 0.75fr) minmax(120px, 0.75fr) minmax(160px, 0.9fr) minmax(150px, 0.9fr) minmax(130px, 0.75fr);
   gap: 12px;
+  align-items: end;
+}
+
+.machine-filter-panel {
+  padding: 16px;
+}
+
+.machine-filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.machine-filter-head .muted,
+.machine-filter-head h4 {
+  margin: 0;
+}
+
+.machine-filter-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.machine-filter-panel .field {
+  gap: 7px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.machine-filter-panel input,
+.machine-filter-panel select {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.95rem;
 }
 
 .pagination {
@@ -462,11 +515,30 @@
   box-shadow: 0 20px 80px rgba(0, 0, 0, 0.35);
 }
 
+.auth-card .btn {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 18px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   color: #fff;
+}
+
+.field-error {
+  color: #ff8a8a;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: rgba(255, 107, 107, 0.75);
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.1);
 }
 
 .password-field {
@@ -574,7 +646,40 @@ select option {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-close {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.35rem;
+  line-height: 1;
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+}
+
+.modal-close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.modal-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* Topup Modal Styles */
@@ -695,6 +800,19 @@ select option {
   .app-shell .app-content {
     padding-top: 0;
   }
+
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .machine-filter-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .machine-filter-meta {
+    justify-content: flex-start;
+  }
 }
 
 /* ===== Topup Modal Styles ===== */
@@ -784,6 +902,10 @@ select option {
 }
 
 @media (max-width: 480px) {
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
   .amount-presets {
     grid-template-columns: repeat(2, 1fr);
   }

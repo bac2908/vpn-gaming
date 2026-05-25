@@ -146,6 +146,40 @@ class PaymentInitResponse(BaseModel):
     amount: int
 
 
+class ServicePlanOut(BaseModel):
+    id: UUID
+    code: str
+    name: str
+    description: str | None = None
+    price_cents: int
+    currency: str = "VND"
+    duration_days: int
+    data_limit_gb: int | None = None
+    active: bool = True
+
+    class Config:
+        orm_mode = True
+
+
+class SubscriptionOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    plan_id: UUID
+    status: str
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    auto_renew: bool = False
+    canceled_at: datetime | None = None
+    plan: ServicePlanOut | None = None
+
+    class Config:
+        orm_mode = True
+
+
+class SubscriptionPurchaseRequest(BaseModel):
+    plan_id: UUID
+
+
 class MachineCreateRequest(BaseModel):
     code: str
     region: str | None = None

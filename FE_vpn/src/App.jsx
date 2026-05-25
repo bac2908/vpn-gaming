@@ -439,6 +439,19 @@ function TopupModal({ open, onClose, amount, setAmount, description, setDescript
   const [isCustom, setIsCustom] = useState(false)
   const [customAmount, setCustomAmount] = useState('')
 
+  useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && !loading) {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open, loading, onClose])
+
   if (!open) return null
 
   const handlePresetClick = (value) => {
@@ -466,8 +479,17 @@ function TopupModal({ open, onClose, amount, setAmount, description, setDescript
   const displayAmount = amount ? formatCurrency(Number(amount)) : '0đ'
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal topup-modal">
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !loading) {
+          onClose()
+        }
+      }}
+    >
+      <div className="modal topup-modal" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <h3>Nạp tiền</h3>
           <button className="btn ghost" onClick={onClose}>Đóng</button>
@@ -614,7 +636,16 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
       <div className="modal">
         <div className="modal-header">
           <h3>Cập nhật thông tin tài khoản</h3>
-          <button className="btn ghost" onClick={onClose} disabled={loading}>Đóng</button>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Đóng"
+            title="Đóng"
+          >
+            ×
+          </button>
         </div>
         <form className="stack" onSubmit={handleSubmit}>
           <label className="field">
@@ -732,7 +763,16 @@ function ChangePasswordModal({ open, onClose, user }) {
       <div className="modal">
         <div className="modal-header">
           <h3>Đổi mật khẩu</h3>
-          <button className="btn ghost" onClick={onClose} disabled={loading}>Đóng</button>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Đóng"
+            title="Đóng"
+          >
+            ×
+          </button>
         </div>
         <form className="stack" onSubmit={handleSubmit}>
           <label className="field">

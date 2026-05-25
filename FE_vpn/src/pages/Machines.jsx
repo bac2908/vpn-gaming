@@ -91,6 +91,33 @@ function Machines({ ctx }) {
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
     const token = ctx?.token
     const navigate = useNavigate()
+    const hasActiveFilters = Boolean(
+        filters.region ||
+        filters.gpu ||
+        filters.minPing ||
+        filters.maxPing ||
+        filters.status !== 'idle' ||
+        filters.sort !== 'best' ||
+        pageSize !== 12
+    )
+
+    const updateFilter = (key, value) => {
+        setFilters((prev) => ({ ...prev, [key]: value }))
+        setPage(1)
+    }
+
+    const resetFilters = () => {
+        setFilters({
+            region: '',
+            gpu: '',
+            minPing: '',
+            maxPing: '',
+            sort: 'best',
+            status: 'idle',
+        })
+        setPageSize(12)
+        setPage(1)
+    }
 
     const handleStart = async (machineId) => {
         try {
@@ -147,17 +174,26 @@ function Machines({ ctx }) {
                 </div>
             </div>
 
-            <div className="card filters">
+            <div className="card filters machine-filter-panel">
+                <div className="machine-filter-head">
+                    <div>
+                        <p className="muted">Bộ lọc</p>
+                        <h4>Tìm máy phù hợp</h4>
+                    </div>
+                    <div className="machine-filter-meta">
+                        <span className="pill ghost">{total} máy</span>
+                        <button type="button" className="btn ghost" onClick={resetFilters} disabled={!hasActiveFilters}>
+                            Đặt lại
+                        </button>
+                    </div>
+                </div>
                 <div className="filter-grid">
                     <label className="field">
                         Region
                         <input
                             placeholder="VD: Singapore"
                             value={filters.region}
-                            onChange={(e) => {
-                                setFilters((prev) => ({ ...prev, region: e.target.value }))
-                                setPage(1)
-                            }}
+                            onChange={(e) => updateFilter('region', e.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -165,66 +201,51 @@ function Machines({ ctx }) {
                         <input
                             placeholder="VD: RTX 4080"
                             value={filters.gpu}
-                            onChange={(e) => {
-                                setFilters((prev) => ({ ...prev, gpu: e.target.value }))
-                                setPage(1)
-                            }}
+                            onChange={(e) => updateFilter('gpu', e.target.value)}
                         />
                     </label>
                     <label className="field">
-                        Ping tối thiểu (ms)
+                        Ping từ
                         <input
                             type="number"
                             min="0"
                             placeholder="VD: 20"
                             value={filters.minPing}
-                            onChange={(e) => {
-                                setFilters((prev) => ({ ...prev, minPing: e.target.value }))
-                                setPage(1)
-                            }}
+                            onChange={(e) => updateFilter('minPing', e.target.value)}
                         />
                     </label>
                     <label className="field">
-                        Ping tối đa (ms)
+                        Ping đến
                         <input
                             type="number"
                             min="0"
                             placeholder="VD: 50"
                             value={filters.maxPing}
-                            onChange={(e) => {
-                                setFilters((prev) => ({ ...prev, maxPing: e.target.value }))
-                                setPage(1)
-                            }}
+                            onChange={(e) => updateFilter('maxPing', e.target.value)}
                         />
-                    </label>
-                    <label className="field">
-                        Sắp xếp
-                        <select
-                            value={filters.sort}
-                            onChange={(e) => {
-                                setFilters((prev) => ({ ...prev, sort: e.target.value }))
-                                setPage(1)
-                            }}
-                        >
-                            <option value="best">Tốt nhất</option>
-                            <option value="ping">Ping thấp</option>
-                        </select>
                     </label>
                     <label className="field">
                         Trạng thái
                         <select
                             value={filters.status}
-                            onChange={(e) => {
-                                setFilters((prev) => ({ ...prev, status: e.target.value }))
-                                setPage(1)
-                            }}
+                            onChange={(e) => updateFilter('status', e.target.value)}
                         >
                             <option value="idle">Chỉ máy trống</option>
                             <option value="">Tất cả</option>
                         </select>
                     </label>
                     <label className="field">
-                        Số máy/trang
+                        Sắp xếp
+                        <select
+                            value={filters.sort}
+                            onChange={(e) => updateFilter('sort', e.target.value)}
+                        >
+                            <option value="best">Tốt nhất</option>
+                            <option value="ping">Ping thấp</option>
+                        </select>
+                    </label>
+                    <label className="field">
+                        Hiển thị
                         <select
                             value={pageSize}
                             onChange={(e) => {

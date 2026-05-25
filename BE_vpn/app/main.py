@@ -25,6 +25,7 @@ from app.api.auth import router as auth_router
 from app.api.machines import router as machines_router
 from app.api.payments import router as payments_router
 from app.api.admin import router as admin_router
+from app.api.subscriptions import router as subscriptions_router
 from app import security
 
 settings = get_settings()
@@ -210,6 +211,7 @@ async def log_http_requests(request: Request, call_next):
 app.include_router(auth_router)
 app.include_router(machines_router)
 app.include_router(payments_router)
+app.include_router(subscriptions_router)
 app.include_router(admin_router)
 
 @app.get("/health")

@@ -4,6 +4,9 @@ import { useLocation } from 'react-router-dom'
 function Support() {
     const location = useLocation()
     const [expandedFaq, setExpandedFaq] = useState(null)
+    const [supportForm, setSupportForm] = useState({ title: '', type: '', detail: '' })
+    const [supportErrors, setSupportErrors] = useState({})
+    const [supportMessage, setSupportMessage] = useState('')
 
     useEffect(() => {
         if (!location.hash) return
@@ -41,6 +44,47 @@ function Support() {
 
     const scrollToDocs = () => {
         document.getElementById('docs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+
+    const updateSupportForm = (field, value) => {
+        setSupportForm((prev) => ({ ...prev, [field]: value }))
+        setSupportErrors((prev) => ({ ...prev, [field]: '' }))
+        setSupportMessage('')
+    }
+
+    const validateSupportForm = () => {
+        const errors = {}
+        if (!supportForm.title.trim()) {
+            errors.title = 'Vui lòng nhập tiêu đề yêu cầu.'
+        } else if (supportForm.title.trim().length < 5) {
+            errors.title = 'Tiêu đề cần ít nhất 5 ký tự.'
+        }
+
+        if (!supportForm.type) {
+            errors.type = 'Vui lòng chọn loại vấn đề.'
+        }
+
+        if (!supportForm.detail.trim()) {
+            errors.detail = 'Vui lòng mô tả chi tiết vấn đề bạn đang gặp.'
+        } else if (supportForm.detail.trim().length < 20) {
+            errors.detail = 'Mô tả chi tiết cần ít nhất 20 ký tự để hỗ trợ xử lý chính xác.'
+        }
+
+        return errors
+    }
+
+    const handleSupportSubmit = (event) => {
+        event.preventDefault()
+        const errors = validateSupportForm()
+        if (Object.keys(errors).length > 0) {
+            setSupportErrors(errors)
+            setSupportMessage('')
+            return
+        }
+
+        setSupportErrors({})
+        setSupportMessage('Đã ghi nhận yêu cầu hỗ trợ. Đội hỗ trợ sẽ phản hồi theo thông tin tài khoản của bạn.')
+        setSupportForm({ title: '', type: '', detail: '' })
     }
 
     return (
@@ -132,25 +176,45 @@ function Support() {
                 <div className="card-header">
                     <h3>Gửi yêu cầu hỗ trợ</h3>
                 </div>
-                <form className="support-form">
+                <form className="support-form" onSubmit={handleSupportSubmit} noValidate>
                     <label className="field">
                         Tiêu đề
-                        <input type="text" placeholder="Mô tả ngắn vấn đề của bạn" />
+                        <input
+                            type="text"
+                            placeholder="Mô tả ngắn vấn đề của bạn"
+                            value={supportForm.title}
+                            onChange={(event) => updateSupportForm('title', event.target.value)}
+                            aria-invalid={Boolean(supportErrors.title)}
+                        />
+                        {supportErrors.title && <span className="field-error">{supportErrors.title}</span>}
                     </label>
                     <label className="field">
                         Loại vấn đề
-                        <select>
+                        <select
+                            value={supportForm.type}
+                            onChange={(event) => updateSupportForm('type', event.target.value)}
+                            aria-invalid={Boolean(supportErrors.type)}
+                        >
                             <option value="">Chọn loại vấn đề</option>
                             <option value="payment">Thanh toán / Nạp tiền</option>
                             <option value="technical">Kỹ thuật / Kết nối</option>
                             <option value="account">Tài khoản</option>
                             <option value="other">Khác</option>
                         </select>
+                        {supportErrors.type && <span className="field-error">{supportErrors.type}</span>}
                     </label>
                     <label className="field">
                         Mô tả chi tiết
-                        <textarea rows="4" placeholder="Mô tả chi tiết vấn đề bạn đang gặp phải..."></textarea>
+                        <textarea
+                            rows="4"
+                            placeholder="Mô tả chi tiết vấn đề bạn đang gặp phải..."
+                            value={supportForm.detail}
+                            onChange={(event) => updateSupportForm('detail', event.target.value)}
+                            aria-invalid={Boolean(supportErrors.detail)}
+                        />
+                        {supportErrors.detail && <span className="field-error">{supportErrors.detail}</span>}
                     </label>
+                    {supportMessage && <div className="alert success">{supportMessage}</div>}
                     <div className="actions">
                         <button type="submit" className="btn primary">Gửi yêu cầu</button>
                     </div>
