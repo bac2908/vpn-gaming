@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-    ArrowRight,
     CheckCircle2,
     Circle,
     Cpu,
@@ -29,14 +28,50 @@ import {
     stopSession,
 } from '../api/machines'
 
+const MACHINE_CARD_IMAGES = [
+    '/gpu-banner-1.png',
+    '/gpu-banner-2.png',
+    '/gpu-banner-3.png',
+    '/gpu-banner-4.png',
+    '/gpu-banner-5.png',
+    '/vpn_image_1.png',
+    '/vpn_image_2.png',
+    '/vpn_image_3.png',
+    '/vpn_image_4.png',
+    '/vpn_image_5.png',
+    '/vpn_image_6.png',
+    '/vpn_image_7.png',
+    '/vpn_image_8.png',
+    '/vpn_image_9.png',
+    '/vpn_image_10.png',
+    '/vpn_image_11.png',
+    '/vpn_image_12.png',
+    '/vpn_image_13.png',
+    '/vpn_image_14.png',
+    '/vpn_image_15.png',
+]
+
 const getCountryData = (region) => {
     const r = String(region || '').toLowerCase()
-    if (r.includes('singapore') || r.includes('sg')) return { code: 'sg', name: 'Singapore', flagUrl: 'https://flagcdn.com/sg.svg' }
-    if (r.includes('japan') || r.includes('nhật') || r.includes('jp') || r.includes('tokyo')) return { code: 'jp', name: 'Tokyo', flagUrl: 'https://flagcdn.com/jp.svg' }
-    if (r.includes('korea') || r.includes('kr') || r.includes('seoul')) return { code: 'kr', name: 'Seoul', flagUrl: 'https://flagcdn.com/kr.svg' }
-    if (r.includes('germany') || r.includes('de') || r.includes('frankfurt')) return { code: 'de', name: 'Frankfurt', flagUrl: 'https://flagcdn.com/de.svg' }
-    if (r.includes('vietnam') || r.includes('việt nam') || r.includes('vn')) return { code: 'vn', name: 'Việt Nam', flagUrl: 'https://flagcdn.com/vn.svg' }
-    return { code: null, name: region || 'Global', flagUrl: null }
+    if (r.includes('singapore') || r.includes('sg')) return { flag: '🇸🇬', code: 'sg', name: 'Singapore', flagUrl: 'https://flagcdn.com/sg.svg' }
+    if (
+        r.includes('vietnam') || r.includes('việt nam') || r.includes('vn') ||
+        r.includes('hanoi') || r.includes('hà nội') || r.includes('hcmc') ||
+        r.includes('hồ chí minh') || r.includes('ho chi minh') || r.includes('saigon') || r.includes('sài gòn')
+    ) {
+        return { flag: '🇻🇳', code: 'vn', name: 'Việt Nam', flagUrl: 'https://flagcdn.com/vn.svg' }
+    }
+    if (r.includes('japan') || r.includes('nhật') || r.includes('nhat') || r.includes('jp') || r.includes('tokyo')) return { flag: '🇯🇵', code: 'jp', name: 'Japan', flagUrl: 'https://flagcdn.com/jp.svg' }
+    if (r.includes('korea') || r.includes('kr') || r.includes('seoul')) return { flag: '🇰🇷', code: 'kr', name: 'Korea', flagUrl: 'https://flagcdn.com/kr.svg' }
+    if (r.includes('hong kong') || r.includes('hongkong') || r.includes('hk')) return { flag: '🇭🇰', code: 'hk', name: 'Hong Kong', flagUrl: 'https://flagcdn.com/hk.svg' }
+    if (r.includes('usa') || r.includes('us') || r.includes('mỹ') || r.includes('america') || r.includes('san jose')) return { flag: '🇺🇸', code: 'us', name: 'USA', flagUrl: 'https://flagcdn.com/us.svg' }
+    if (r.includes('australia') || r.includes('au') || r.includes('sydney')) return { flag: '🇦🇺', code: 'au', name: 'Australia', flagUrl: 'https://flagcdn.com/au.svg' }
+    if (r.includes('germany') || r.includes('de') || r.includes('frankfurt')) return { flag: '🇩🇪', code: 'de', name: 'Germany', flagUrl: 'https://flagcdn.com/de.svg' }
+    if (r.includes('taiwan') || r.includes('tw') || r.includes('taipei')) return { flag: '🇹🇼', code: 'tw', name: 'Taiwan', flagUrl: 'https://flagcdn.com/tw.svg' }
+    if (r.includes('thailand') || r.includes('thai') || r.includes('bangkok')) return { flag: '🇹🇭', code: 'th', name: 'Thailand', flagUrl: 'https://flagcdn.com/th.svg' }
+    if (r.includes('united kingdom') || r.includes('uk') || r.includes('london')) return { flag: '🇬🇧', code: 'gb', name: 'United Kingdom', flagUrl: 'https://flagcdn.com/gb.svg' }
+    if (r.includes('canada') || r.includes('ca') || r.includes('toronto')) return { flag: '🇨🇦', code: 'ca', name: 'Canada', flagUrl: 'https://flagcdn.com/ca.svg' }
+    return { flag: '🌐', code: null, name: region || 'Global', flagUrl: null }
 }
 
 const formatDurationFrom = (value) => {
@@ -65,6 +100,21 @@ const formatLogTime = (value) => {
 const formatPing = (machine) => {
     const ping = machine?.ping_ms ?? machine?.ping
     return Number.isFinite(Number(ping)) ? `${ping} ms` : 'Chưa đo'
+}
+
+const getMachineVisual = (machine, machines) => {
+    if (machine?.image_url || machine?.image) return machine.image_url || machine.image
+    const machineIndex = machines.findIndex((item) => String(item.id) === String(machine?.id))
+    const safeIndex = machineIndex >= 0 ? machineIndex : 0
+    return MACHINE_CARD_IMAGES[safeIndex % MACHINE_CARD_IMAGES.length]
+}
+
+const getGpuBrand = (gpu) => {
+    const value = String(gpu || '').toLowerCase()
+    if (value.includes('radeon') || value.includes('rx ')) return 'AMD'
+    if (value.includes('intel') || value.includes('arc')) return 'INTEL'
+    if (value.includes('rtx') || value.includes('gtx') || value.includes('nvidia')) return 'NVIDIA'
+    return ''
 }
 
 const cockpitSteps = [
@@ -164,7 +214,7 @@ function Wizard({ ctx }) {
                     if (sessionData) localStorage.setItem('active_session', JSON.stringify(sessionData))
                 }
 
-                const machineListData = await listMachines({ page: 1, page_size: 8, sort: 'best' })
+                const machineListData = await listMachines({ page: 1, page_size: 20, sort: 'best' })
                 const items = machineListData.items || []
                 const resolvedMachineId = machineId || sessionData?.machine_id || items[0]?.id
 
@@ -197,6 +247,11 @@ function Wizard({ ctx }) {
     const moonlightReady = Boolean(session?.moonlight_ready || (vpnOnline && sunshinePaired))
     const sessionStartedAt = session?.started_at || session?.start_time || session?.created_at
     const sessionDuration = isActiveSession ? formatDurationFrom(sessionStartedAt) : '--:--:--'
+    const activeSessionMatchesMachine = Boolean(session?.machine_id && machine?.id && String(session.machine_id) === String(machine.id))
+    const currentMachineLabel = isActiveSession && activeSessionMatchesMachine ? 'MÁY ĐANG DÙNG' : machine ? 'MÁY ĐÃ CHỌN' : 'CHƯA CHỌN MÁY'
+    const currentMachineState = isActiveSession && activeSessionMatchesMachine ? 'Đang chạy' : machine ? 'Sẵn sàng khởi tạo' : 'Chưa chọn máy'
+    const machineVisualSrc = useMemo(() => getMachineVisual(machine, machines), [machine, machines])
+    const gpuBrand = getGpuBrand(machine?.gpu)
     const flowState = {
         machine: Boolean(machine),
         session: Boolean(isActiveSession),
@@ -406,19 +461,21 @@ function Wizard({ ctx }) {
 
                 <div className="sl-current-machine">
                     <div className="sl-panel-head">
-                        <strong>Máy hiện tại</strong>
-                        <span><i className="status-dot" /> {isActiveSession ? 'Đang chạy' : 'Sẵn sàng'}</span>
+                        <strong>{currentMachineLabel}</strong>
+                        <span><i className="status-dot" /> {currentMachineState}</span>
                     </div>
                     <div className="sl-current-grid">
                         <div className="sl-gpu-card">
-                            <img src="/gpu-neon-panel.png" alt="GPU" className="sl-gpu-img" />
+                            <img src={machineVisualSrc} alt={machine?.gpu || 'Cloud rig'} className="sl-gpu-img" />
                         </div>
                         <div className="sl-gpu-details">
                             <div className="sl-gpu-header">
                                 <h2>{machine?.gpu || 'Chưa cấu hình GPU'}</h2>
-                                <span className="nvidia-brand">
-                                    <span className="nvidia-logo-dot" /> NVIDIA
-                                </span>
+                                {gpuBrand && (
+                                    <span className="nvidia-brand">
+                                        <span className="nvidia-logo-dot" /> {gpuBrand}
+                                    </span>
+                                )}
                             </div>
                             <p className="sl-gpu-spec">{machine?.spec || machine?.code || 'Chưa có mô tả cấu hình'}</p>
                             <div className="sl-mini-metrics">
@@ -489,7 +546,7 @@ function Wizard({ ctx }) {
                     <div className="sl-rig-options">
                         {loading && <p className="muted">Đang tải danh sách máy...</p>}
                         {!loading && machines.map((rig) => {
-                            const country = getCountryData(rig.region)
+                            const country = getCountryData(rig.region || rig.location)
                             const selected = rig.id === machine?.id
                             const ping = rig.ping_ms ?? rig.ping ?? 0
                             return (
@@ -499,7 +556,7 @@ function Wizard({ ctx }) {
                                     className={`sl-rig-option ${selected ? 'selected' : ''}`}
                                     onClick={() => navigate(`/app/wizard?machineId=${rig.id}`)}
                                 >
-                                    <span>{country.flagUrl && <img src={country.flagUrl} alt={country.name} />}</span>
+                                    <span>{country.flagUrl ? <img src={country.flagUrl} alt={country.name} /> : country.flag}</span>
                                     <div>
                                         <strong>{country.name} - {rig.code}</strong>
                                         <p>{rig.gpu || 'Chưa cấu hình GPU'} - {rig.status || 'Chưa rõ trạng thái'}</p>
@@ -643,41 +700,45 @@ function Wizard({ ctx }) {
 
             <section className="sl-tech-flow">
                 <div className="sl-flow-container">
-                    <p className="sl-tech-title">LUỒNG KỸ THUẬT</p>
+                    <div className="sl-flow-head">
+                        <p className="sl-tech-title">LUỒNG KỸ THUẬT</p>
+                        <span>5 bước để máy sẵn sàng stream</span>
+                    </div>
                     <div className="sl-flow-items">
                         <div className="sl-flow-item purple">
+                            <em>01</em>
                             <span className="sl-flow-icon"><Rocket className="h-5 w-5" /></span>
                             <div className="sl-flow-text">
                                 <strong>Boot VM</strong>
                                 <p>Khởi động máy ảo</p>
                             </div>
                         </div>
-                        <span className="sl-flow-arrow"><ArrowRight className="h-4 w-4" /></span>
                         <div className="sl-flow-item blue">
+                            <em>02</em>
                             <span className="sl-flow-icon"><FileText className="h-5 w-5" /></span>
                             <div className="sl-flow-text">
                                 <strong>VPN profile</strong>
                                 <p>Tải và import profile</p>
                             </div>
                         </div>
-                        <span className="sl-flow-arrow"><ArrowRight className="h-4 w-4" /></span>
                         <div className="sl-flow-item green">
+                            <em>03</em>
                             <span className="sl-flow-icon"><ShieldCheck className="h-5 w-5" /></span>
                             <div className="sl-flow-text">
                                 <strong>VPN check</strong>
                                 <p>Kiểm tra kết nối</p>
                             </div>
                         </div>
-                        <span className="sl-flow-arrow"><ArrowRight className="h-4 w-4" /></span>
                         <div className="sl-flow-item yellow">
+                            <em>04</em>
                             <span className="sl-flow-icon"><Sun className="h-5 w-5" /></span>
                             <div className="sl-flow-text">
                                 <strong>Sunshine pair</strong>
                                 <p>Ghép nối Sunshine</p>
                             </div>
                         </div>
-                        <span className="sl-flow-arrow"><ArrowRight className="h-4 w-4" /></span>
                         <div className="sl-flow-item purple">
+                            <em>05</em>
                             <span className="sl-flow-icon"><Gamepad2 className="h-5 w-5" /></span>
                             <div className="sl-flow-text">
                                 <strong>Moonlight stream</strong>
@@ -687,7 +748,8 @@ function Wizard({ ctx }) {
                     </div>
                 </div>
                 <div className="sl-note">
-                    <h3>Ghi chú</h3>
+                    <p className="sl-next-kicker">LƯU Ý PHIÊN</p>
+                    <h3>Giữ kết nối ổn định</h3>
                     <p>Giữ ứng dụng chạy nền để duy trì phiên ổn định.</p>
                 </div>
             </section>

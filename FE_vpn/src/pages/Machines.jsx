@@ -1,6 +1,30 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listMachines, getMachine, startMachine, resumeMachine } from '../api/machines'
+
+const MACHINE_CARD_IMAGES = [
+    '/gpu-banner-1.png',
+    '/gpu-banner-2.png',
+    '/gpu-banner-3.png',
+    '/gpu-banner-4.png',
+    '/gpu-banner-5.png',
+    '/vpn_image_1.png',
+    '/vpn_image_2.png',
+    '/vpn_image_3.png',
+    '/vpn_image_4.png',
+    '/vpn_image_5.png',
+    '/vpn_image_6.png',
+    '/vpn_image_7.png',
+    '/vpn_image_8.png',
+    '/vpn_image_9.png',
+    '/vpn_image_10.png',
+    '/vpn_image_11.png',
+    '/vpn_image_12.png',
+    '/vpn_image_13.png',
+    '/vpn_image_14.png',
+    '/vpn_image_15.png',
+]
+
 const getCountryData = (region) => {
     const r = String(region || '').toLowerCase()
     if (r.includes('singapore') || r.includes('sg')) {
@@ -39,6 +63,46 @@ const normalizeMachineActionError = (err, fallback) => {
     return message
 }
 
+const formatDateTime = (value) => {
+    if (!value) return 'Chưa có dữ liệu'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'Không hợp lệ'
+    return new Intl.DateTimeFormat('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    }).format(date)
+}
+
+const formatSessionDuration = (session) => {
+    const start = session?.started_at ? new Date(session.started_at) : null
+    const end = session?.ended_at ? new Date(session.ended_at) : new Date()
+    if (!start || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'Chưa rõ'
+
+    const totalMinutes = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 60000))
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    if (hours <= 0) return `${minutes} phút`
+    return `${hours} giờ ${minutes} phút`
+}
+
+const getStatusView = (status) => {
+    if (status === 'idle') return { label: 'Trống', tone: 'success' }
+    if (status === 'busy') return { label: 'Đang bận', tone: 'warning' }
+    if (status === 'maintenance') return { label: 'Bảo trì', tone: 'danger' }
+    return { label: status || 'Chưa rõ', tone: 'muted' }
+}
+
+const getPingView = (ping) => {
+    const value = Number(ping)
+    if (!Number.isFinite(value) || value <= 0) return { label: 'Chưa đo', tone: 'muted' }
+    if (value < 30) return { label: 'Cực nhanh', tone: 'success' }
+    if (value <= 80) return { label: 'Khá tốt', tone: 'warning' }
+    return { label: 'Chậm', tone: 'danger' }
+}
+
 function Machines({ ctx }) {
     const [machines, setMachines] = useState([])
     const [loading, setLoading] = useState(true)
@@ -59,6 +123,7 @@ function Machines({ ctx }) {
     const [detailLoading, setDetailLoading] = useState(false)
     const [detailError, setDetailError] = useState('')
     const [detail, setDetail] = useState(null)
+    const [detailVisual, setDetailVisual] = useState(MACHINE_CARD_IMAGES[0])
 
     useEffect(() => {
         let cancelled = false
@@ -165,10 +230,11 @@ function Machines({ ctx }) {
         }
     }
 
-    const handleDetail = async (machineId) => {
+    const handleDetail = async (machineId, visualSrc = MACHINE_CARD_IMAGES[0]) => {
         setDetailError('')
         setDetailLoading(true)
         setDetailOpen(true)
+        setDetailVisual(visualSrc)
         try {
             const data = await getMachine(machineId, token)
             setDetail(data)
@@ -180,18 +246,18 @@ function Machines({ ctx }) {
     }
 
     return (
-        <div className="stack">
+        <div className="stack machines-page">
             <div className="section-head">
                 <div>
-                    <p className="muted">Máy & phiên của bạn</p>
-                    <h2>Quản lý máy</h2>
+                    <p className="muted">Chọn máy cloud phù hợp</p>
+                    <h2>Máy chơi game</h2>
                 </div>
                 <div className="actions">
                     <a className="btn ghost" href="/app/history">
                         Lịch sử
                     </a>
                     <a className="btn primary" href="/app/wizard">
-                        Khởi tạo phiên
+                        Khởi tạo nhanh
                     </a>
                 </div>
             </div>
@@ -199,8 +265,8 @@ function Machines({ ctx }) {
             <div className="card filters machine-filter-panel">
                 <div className="machine-filter-head">
                     <div>
-                        <p className="muted">Bộ lọc</p>
-                        <h4>Tìm máy phù hợp</h4>
+                        <p className="muted">Bộ lọc máy</p>
+                        <h4>Ưu tiên ping thấp và máy đang trống</h4>
                     </div>
                     <div className="machine-filter-meta">
                         <span className="pill ghost">{total} máy</span>
@@ -211,15 +277,15 @@ function Machines({ ctx }) {
                 </div>
                 <div className="filter-grid">
                     <label className="field">
-                        Region
+                        Khu vực
                         <input
-                            placeholder="VD: Singapore"
+                            placeholder="VD: Việt Nam"
                             value={filters.region}
                             onChange={(e) => updateFilter('region', e.target.value)}
                         />
                     </label>
                     <label className="field">
-                        GPU
+                        Card đồ họa
                         <input
                             placeholder="VD: RTX 4080"
                             value={filters.gpu}
@@ -302,7 +368,9 @@ function Machines({ ctx }) {
                         <p className="muted">Chưa có máy nào từ hệ thống.</p>
                     </div>
                 )}
-                {!loading && display.map((m) => {
+                {!loading && display.map((m, machineIndex) => {
+                    const globalMachineIndex = (page - 1) * pageSize + machineIndex
+                    const visualSrc = MACHINE_CARD_IMAGES[globalMachineIndex % MACHINE_CARD_IMAGES.length]
                     const country = getCountryData(m.region)
                     const isIdle = m.status === 'idle'
                     const ping = m.ping_ms ?? m.ping ?? 0
@@ -319,58 +387,9 @@ function Machines({ ctx }) {
 
                     return (
                         <div key={m.id} className="machine-premium-card card">
-                            {/* Khối Ảnh Visual & Badge nổi */}
                             <div className="machine-card-visual-wrapper">
-                                {/* Đồ họa SVG Server */}
-                                <svg viewBox="0 0 300 150" className="machine-svg-graphic">
-                                    <defs>
-                                        <linearGradient id={`server-grad-${m.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                                            <stop offset="0%" stopColor="#1a1a35" />
-                                            <stop offset="100%" stopColor="#0b0b18" />
-                                        </linearGradient>
-                                        <linearGradient id={`led-grad-${m.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-                                            <stop offset="0%" stopColor="#F45D48" />
-                                            <stop offset="100%" stopColor="#00B8D9" />
-                                        </linearGradient>
-                                        <filter id={`glow-led-${m.id}`} x="-20%" y="-20%" width="140%" height="140%">
-                                            <feGaussianBlur stdDeviation="3" result="blur" />
-                                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                        </filter>
-                                    </defs>
-                                    <rect width="300" height="150" rx="12" fill={`url(#server-grad-${m.id})`} />
-                                    <line x1="20" y1="35" x2="280" y2="35" stroke="#242442" strokeWidth="2" />
-                                    <line x1="20" y1="75" x2="280" y2="75" stroke="#242442" strokeWidth="2" />
-                                    <line x1="20" y1="115" x2="280" y2="115" stroke="#242442" strokeWidth="2" />
+                                <img className="machine-banner-image" src={visualSrc} alt="" />
 
-                                    {/* CPU / Glow node */}
-                                    <rect x="245" y="45" width="22" height="22" rx="4" fill="#090a18" stroke="#313159" strokeWidth="1" />
-                                    <circle cx="256" cy="56" r="4.5" fill="#00B8D9" filter={`url(#glow-led-${m.id})`} />
-
-                                    <rect x="245" y="85" width="22" height="22" rx="4" fill="#090a18" stroke="#313159" strokeWidth="1" />
-                                    <circle cx="256" cy="96" r="4.5" fill="#F45D48" filter={`url(#glow-led-${m.id})`} />
-
-                                    <g opacity="0.9">
-                                        {/* Rack Slot 1 */}
-                                        <rect x="25" y="48" width="165" height="16" rx="4" fill="#101021" stroke="#252549" strokeWidth="1" />
-                                        <rect x="35" y="54" width="70" height="4" rx="2" fill={`url(#led-grad-${m.id})`} />
-                                        <circle cx="130" cy="56" r="3.5" fill="#00ffcc" />
-                                        <circle cx="145" cy="56" r="3.5" fill="#00ffcc" />
-                                        <circle cx="160" cy="56" r="3.5" fill="#ff3b30" />
-
-                                        {/* Rack Slot 2 */}
-                                        <rect x="25" y="88" width="165" height="16" rx="4" fill="#101021" stroke="#252549" strokeWidth="1" />
-                                        <rect x="35" y="94" width="90" height="4" rx="2" fill={`url(#led-grad-${m.id})`} />
-                                        <circle cx="130" cy="96" r="3.5" fill="#00ffcc" />
-                                        <circle cx="145" cy="96" r="3.5" fill="#ffcc00" />
-                                        <circle cx="160" cy="96" r="3.5" fill="#00ffcc" />
-                                    </g>
-
-                                    {/* Lưới Grid */}
-                                    <path d="M 0,10 L 300,10 M 0,20 L 300,20 M 0,30 L 300,30 M 0,40 L 300,40 M 0,50 L 300,50 M 0,60 L 300,60 M 0,70 L 300,70 M 0,80 L 300,80 M 0,90 L 300,90 M 0,100 L 300,100 M 0,110 L 300,110 M 0,120 L 300,120 M 0,130 L 300,130 M 0,140 L 300,140" stroke="#ffffff" strokeWidth="1" opacity="0.015" />
-                                    <path d="M 10,0 L 10,150 M 20,0 L 20,150 M 30,0 L 30,150 M 40,0 L 40,150 M 50,0 L 50,150 M 60,0 L 60,150 M 70,0 L 70,150 M 80,0 L 80,150 M 90,0 L 90,150 M 100,0 L 100,150 M 110,0 L 110,150 M 120,0 L 120,150 M 130,0 L 130,150 M 140,0 L 140,150 M 150,0 L 150,150 M 160,0 L 160,150 M 170,0 L 170,150 M 180,0 L 180,150 M 190,0 L 190,150 M 200,0 L 200,150 M 210,0 L 210,150 M 220,0 L 220,150 M 230,0 L 230,150 M 240,0 L 240,150 M 250,0 L 250,150 M 260,0 L 260,150 M 270,0 L 270,150 M 280,0 L 280,150 M 290,0 L 290,150" stroke="#ffffff" strokeWidth="1" opacity="0.015" />
-                                </svg>
-
-                                {/* Country Badge nổi bên góc */}
                                 <div className="machine-floating-flag" title={country.name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {country.flagUrl ? (
                                         <img
@@ -384,21 +403,18 @@ function Machines({ ctx }) {
                                     <span className="flag-label">{country.name}</span>
                                 </div>
 
-                                {/* Badge Trạng thái nổi */}
                                 <div className={`machine-floating-status ${isIdle ? 'idle' : 'busy'}`}>
                                     {isIdle && <span className="pulsing-dot" />}
                                     <span>{isIdle ? 'Trống' : 'Bận'}</span>
                                 </div>
                             </div>
 
-                            {/* Khối Thông tin máy */}
                             <div className="machine-card-content">
                                 <div className="machine-card-title-row">
                                     <h3 className="machine-name">{m.location || m.name || m.code}</h3>
                                     <span className="machine-code-pill">{m.code || m.id?.slice(0, 8)}</span>
                                 </div>
 
-                                {/* Khung GPU chuyên nghiệp */}
                                 <div className="machine-gpu-box">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="gpu-icon">
                                         <rect x="2" y="2" width="20" height="20" rx="4" />
@@ -408,9 +424,8 @@ function Machines({ ctx }) {
                                     <span className="gpu-label">{m.spec || m.gpu || 'Core i7 · RAM 16GB'}</span>
                                 </div>
 
-                                {/* Khối Ping & Network */}
                                 <div className="machine-network-row">
-                                    <span className="network-label">Độ trễ (Ping)</span>
+                                    <span className="network-label">Độ trễ</span>
                                     <div className={`ping-indicator-pill ${pingClass}`}>
                                         <span className="ping-dot" />
                                         <span className="ping-val">{ping > 0 ? `${ping} ms` : '? ms'}</span>
@@ -419,24 +434,23 @@ function Machines({ ctx }) {
                                 </div>
                             </div>
 
-                            {/* Các nút Hành động */}
                             <div className="machine-card-actions">
                                 <button
                                     className="btn primary action-start"
                                     onClick={() => handleStart(m.id)}
                                     disabled={!isIdle}
                                 >
-                                    🎮 Bắt đầu
+                                    Khởi tạo máy này
                                 </button>
                                 <button
                                     className="btn secondary action-resume"
                                     onClick={() => handleResume(m.id)}
                                     disabled={!isIdle}
                                 >
-                                    💾 Tiếp tục snapshot
+                                    Tiếp tục snapshot
                                 </button>
-                                <button className="btn ghost action-detail" onClick={() => handleDetail(m.id)}>
-                                    ℹ️ Chi tiết
+                                <button className="btn ghost action-detail" onClick={() => handleDetail(m.id, visualSrc)}>
+                                    Chi tiết
                                 </button>
                             </div>
                         </div>
@@ -445,56 +459,164 @@ function Machines({ ctx }) {
             </div>
 
             {detailOpen && (
-                <div className="modal-backdrop" role="dialog" aria-modal="true">
-                    <div className="modal">
+                <div
+                    className="modal-backdrop"
+                    role="dialog"
+                    aria-modal="true"
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                            setDetailOpen(false)
+                        }
+                    }}
+                >
+                    <div className="modal machine-detail-modal" onMouseDown={(event) => event.stopPropagation()}>
                         <div className="modal-header">
                             <h3>Chi tiết máy</h3>
-                            <button className="btn ghost" onClick={() => setDetailOpen(false)}>Đóng</button>
+                            <button className="modal-close" onClick={() => setDetailOpen(false)} aria-label="Đóng">×</button>
                         </div>
                         {detailLoading && <p className="muted">Đang tải...</p>}
                         {!detailLoading && detailError && <div className="alert error">{detailError}</div>}
-                        {!detailLoading && !detailError && detail?.machine && (
-                            <div className="stack">
-                                <div className="row-between">
-                                    <div>
-                                        <p className="muted">Region</p>
-                                        <h4>{detail.machine.region || 'N/A'}</h4>
-                                    </div>
-                                    <span className={`badge ${detail.machine.status === 'idle' ? 'success' : 'warning'}`}>
-                                        {detail.machine.status === 'idle' ? 'Trống' : 'Đang bận'}
-                                    </span>
-                                </div>
-                                <div className="row-between">
-                                    <span className="muted">GPU</span>
-                                    <span>{detail.machine.gpu || 'N/A'}</span>
-                                </div>
-                                <div className="row-between">
-                                    <span className="muted">Ping</span>
-                                    <span>{detail.machine.ping_ms ?? '?'} ms</span>
-                                </div>
-                                <div className="row-between">
-                                    <span className="muted">Code</span>
-                                    <span>{detail.machine.code}</span>
-                                </div>
-                                <div className="card info">
-                                    <p className="muted"><strong>Phiên gần nhất của bạn</strong></p>
-                                    {detail.last_session ? (
-                                        <div className="stack">
-                                            <div className="row-between">
-                                                <span className="muted">Bắt đầu</span>
-                                                <span>{detail.last_session.started_at || 'N/A'}</span>
-                                            </div>
-                                            <div className="row-between">
-                                                <span className="muted">Kết thúc</span>
-                                                <span>{detail.last_session.ended_at || 'N/A'}</span>
+                        {!detailLoading && !detailError && detail?.machine && (() => {
+                            const machine = detail.machine
+                            const country = getCountryData(machine.region || machine.location)
+                            const statusView = getStatusView(machine.status)
+                            const ping = machine.ping_ms ?? machine.ping
+                            const pingView = getPingView(ping)
+                            const isIdle = machine.status === 'idle'
+                            const activeSession = detail.active_session
+                            const lastSession = detail.last_session
+
+                            return (
+                                <div className="machine-detail-content">
+                                    <div className="machine-detail-hero">
+                                        <img src={detailVisual} alt="" />
+                                        <div className="machine-detail-hero-overlay">
+                                            <span className={`machine-detail-status ${statusView.tone}`}>{statusView.label}</span>
+                                            <div>
+                                                <p>{country.name}</p>
+                                                <h2>{machine.location || machine.region || machine.code}</h2>
+                                                <span>{machine.gpu || 'Chưa cấu hình GPU'}</span>
                                             </div>
                                         </div>
-                                    ) : (
-                                        <p className="muted">Chưa có snapshot.</p>
-                                    )}
+                                    </div>
+
+                                    <div className="machine-detail-stats">
+                                        <div>
+                                            <span>Mã máy</span>
+                                            <strong>{machine.code || 'N/A'}</strong>
+                                        </div>
+                                        <div>
+                                            <span>Ping</span>
+                                            <strong className={`detail-tone ${pingView.tone}`}>{Number.isFinite(Number(ping)) ? `${ping} ms` : pingView.label}</strong>
+                                            <em>{pingView.label}</em>
+                                        </div>
+                                        <div>
+                                            <span>Khu vực</span>
+                                            <strong>{country.name}</strong>
+                                            <em>{machine.region || machine.location || 'Global'}</em>
+                                        </div>
+                                        <div>
+                                            <span>Heartbeat</span>
+                                            <strong>{machine.last_heartbeat ? 'Online' : 'Chưa rõ'}</strong>
+                                            <em>{formatDateTime(machine.last_heartbeat)}</em>
+                                        </div>
+                                    </div>
+
+                                    <div className="machine-detail-grid">
+                                        <section className="machine-detail-panel">
+                                            <div className="machine-detail-panel-head">
+                                                <p>Thông số vận hành</p>
+                                                <span className={`machine-detail-status ${statusView.tone}`}>{statusView.label}</span>
+                                            </div>
+                                            <dl className="machine-detail-list">
+                                                <div>
+                                                    <dt>GPU</dt>
+                                                    <dd>{machine.gpu || 'Chưa cấu hình'}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>ID hệ thống</dt>
+                                                    <dd title={machine.id}>{String(machine.id || 'N/A').slice(0, 18)}...</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>Trạng thái chọn</dt>
+                                                    <dd>{isIdle ? 'Có thể khởi tạo ngay' : 'Tạm thời chưa thể chọn'}</dd>
+                                                </div>
+                                            </dl>
+                                        </section>
+
+                                        <section className="machine-detail-panel">
+                                            <div className="machine-detail-panel-head">
+                                                <p>Phiên đang chạy</p>
+                                                <span className={`machine-detail-status ${activeSession ? 'success' : 'muted'}`}>
+                                                    {activeSession ? 'Đang có phiên' : 'Không có'}
+                                                </span>
+                                            </div>
+                                            {activeSession ? (
+                                                <dl className="machine-detail-list">
+                                                    <div>
+                                                        <dt>Bắt đầu</dt>
+                                                        <dd>{formatDateTime(activeSession.started_at)}</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt>Thời lượng</dt>
+                                                        <dd>{formatSessionDuration(activeSession)}</dd>
+                                                    </div>
+                                                    <div>
+                                                        <dt>VPN / Moonlight</dt>
+                                                        <dd>{activeSession.vpn_online ? 'VPN online' : 'VPN chưa online'} · {activeSession.moonlight_ready || activeSession.sunshine_paired ? 'Moonlight sẵn sàng' : 'Chờ pairing'}</dd>
+                                                    </div>
+                                                </dl>
+                                            ) : (
+                                                <p className="muted">Máy chưa có phiên active. Nếu máy đang trống, bạn có thể khởi tạo ngay.</p>
+                                            )}
+                                        </section>
+                                    </div>
+
+                                    <section className="machine-detail-panel">
+                                        <div className="machine-detail-panel-head">
+                                            <p>Snapshot gần nhất của bạn</p>
+                                            <span className={`machine-detail-status ${lastSession ? 'success' : 'muted'}`}>
+                                                {lastSession ? 'Có thể tiếp tục' : 'Chưa có'}
+                                            </span>
+                                        </div>
+                                        {lastSession ? (
+                                            <dl className="machine-detail-list two-col">
+                                                <div>
+                                                    <dt>Bắt đầu</dt>
+                                                    <dd>{formatDateTime(lastSession.started_at)}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>Kết thúc</dt>
+                                                    <dd>{formatDateTime(lastSession.ended_at)}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>Thời lượng</dt>
+                                                    <dd>{formatSessionDuration(lastSession)}</dd>
+                                                </div>
+                                                <div>
+                                                    <dt>IP VPN</dt>
+                                                    <dd>{lastSession.ip_address || 'Chưa ghi nhận'}</dd>
+                                                </div>
+                                            </dl>
+                                        ) : (
+                                            <p className="muted">Bạn chưa có snapshot trên máy này. Hãy khởi tạo phiên mới để bắt đầu.</p>
+                                        )}
+                                    </section>
+
+                                    <div className="machine-detail-actions">
+                                        <button className="btn primary" onClick={() => handleStart(machine.id)} disabled={!isIdle}>
+                                            Khởi tạo máy này
+                                        </button>
+                                        <button className="btn secondary" onClick={() => handleResume(machine.id)} disabled={!isIdle || !lastSession}>
+                                            Tiếp tục snapshot
+                                        </button>
+                                        <button className="btn ghost" onClick={() => setDetailOpen(false)}>
+                                            Đóng
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )
+                        })()}
                     </div>
                 </div>
             )}

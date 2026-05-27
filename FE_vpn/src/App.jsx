@@ -88,8 +88,7 @@ function App() {
   const [topupDesc, setTopupDesc] = useState('')
   const [topupError, setTopupError] = useState('')
   const [topupLoading, setTopupLoading] = useState(false)
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [accountModal, setAccountModal] = useState(null)
 
   useEffect(() => {
     if (token) {
@@ -194,16 +193,16 @@ function App() {
         setTopupOpen(true)
       },
       openProfile: () => {
-        setProfileOpen(true)
+        setAccountModal('profile')
       },
       openPassword: () => {
-        setPasswordOpen(true)
+        setAccountModal('password')
       },
       logout: handleLogout,
       clearAuth: clearAuthSession,
       refreshBalance,
     }),
-    [user, session, token, handleLogout, clearAuthSession, refreshBalance, setProfileOpen, setPasswordOpen],
+    [user, session, token, handleLogout, clearAuthSession, refreshBalance],
   )
 
   return (
@@ -259,15 +258,15 @@ function App() {
         onSubmit={handleTopupSubmit}
       />
       <AccountSettingsModal
-        open={profileOpen}
-        onClose={() => setProfileOpen(false)}
+        open={accountModal === 'profile'}
+        onClose={() => setAccountModal(null)}
         user={user}
         token={token}
         onUpdated={(nextUser) => setUser(nextUser)}
       />
       <ChangePasswordModal
-        open={passwordOpen}
-        onClose={() => setPasswordOpen(false)}
+        open={accountModal === 'password'}
+        onClose={() => setAccountModal(null)}
         user={user}
       />
     </>
@@ -660,6 +659,12 @@ function TopupModal({ open, onClose, amount, setAmount, description, setDescript
           onClose()
         }
       }}
+      onContextMenu={(event) => {
+        if (event.target === event.currentTarget && !loading) {
+          event.preventDefault()
+          onClose()
+        }
+      }}
     >
       <div className="modal topup-modal" onMouseDown={(event) => event.stopPropagation()}>
         <div className="modal-header">
@@ -751,6 +756,7 @@ function TopupModal({ open, onClose, amount, setAmount, description, setDescript
 }
 
 function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
+  const modalRef = useRef(null)
   const [displayName, setDisplayName] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -767,6 +773,32 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
     setError('')
     setSuccess('')
   }, [open, user])
+
+  useEffect(() => {
+    if (!open) return
+
+    const handleOutside = (event) => {
+      if (loading) return
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        onClose()
+      }
+    }
+
+    const handleOutsideContext = (event) => {
+      if (loading) return
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        event.preventDefault()
+        onClose()
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutside)
+    document.addEventListener('contextmenu', handleOutsideContext)
+    return () => {
+      document.removeEventListener('mousedown', handleOutside)
+      document.removeEventListener('contextmenu', handleOutsideContext)
+    }
+  }, [open, loading, onClose])
 
   if (!open) return null
 
@@ -804,8 +836,23 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
   }
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal">
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !loading) {
+          onClose()
+        }
+      }}
+      onContextMenu={(event) => {
+        if (event.target === event.currentTarget && !loading) {
+          event.preventDefault()
+          onClose()
+        }
+      }}
+    >
+      <div className="modal" ref={modalRef}>
         <div className="modal-header">
           <h3>Cập nhật thông tin tài khoản</h3>
           <button
@@ -860,7 +907,7 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
           {error && <div className="alert error">{error}</div>}
           {success && <div className="alert success">{success}</div>}
 
-          <div className="actions" style={{ justifyContent: 'flex-end', marginTop: '10px' }}>
+          <div className="actions" style={{ justifyContent: 'flex-end', marginInsetBlockStart: '10px' }}>
             <button type="button" className="btn ghost" onClick={onClose} disabled={loading}>Hủy</button>
             <button type="submit" className="btn primary" disabled={loading}>
               {loading ? 'Đang cập nhật...' : 'Lưu thay đổi'}
@@ -873,6 +920,7 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
 }
 
 function ChangePasswordModal({ open, onClose, user }) {
+  const modalRef = useRef(null)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -893,6 +941,32 @@ function ChangePasswordModal({ open, onClose, user }) {
     setShowNew(false)
     setShowConfirm(false)
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+
+    const handleOutside = (event) => {
+      if (loading) return
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        onClose()
+      }
+    }
+
+    const handleOutsideContext = (event) => {
+      if (loading) return
+      if (modalRef.current && !modalRef.current.contains(event.target)) {
+        event.preventDefault()
+        onClose()
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutside)
+    document.addEventListener('contextmenu', handleOutsideContext)
+    return () => {
+      document.removeEventListener('mousedown', handleOutside)
+      document.removeEventListener('contextmenu', handleOutsideContext)
+    }
+  }, [open, loading, onClose])
 
   if (!open) return null
 
@@ -931,8 +1005,17 @@ function ChangePasswordModal({ open, onClose, user }) {
   }
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal">
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !loading) {
+          onClose()
+        }
+      }}
+    >
+      <div className="modal" ref={modalRef}>
         <div className="modal-header">
           <h3>Đổi mật khẩu</h3>
           <button
@@ -1013,7 +1096,7 @@ function ChangePasswordModal({ open, onClose, user }) {
           {error && <div className="alert error">{error}</div>}
           {success && <div className="alert success">{success}</div>}
 
-          <div className="actions" style={{ justifyContent: 'flex-end', marginTop: '10px' }}>
+          <div className="actions" style={{ justifyContent: 'flex-end', marginBlockStart: '10px' }}>
             <button type="button" className="btn ghost" onClick={onClose} disabled={loading}>Hủy</button>
             <button type="submit" className="btn primary" disabled={loading}>
               {loading ? 'Đang đổi mật khẩu...' : 'Cập nhật mật khẩu'}

@@ -32,13 +32,20 @@ const getCountryData = (region) => {
     return { flag: '🌐', code: null, name: region || 'Global', flagUrl: null }
 }
 
+const HERO_MACHINE_IMAGES = [
+    '/gpu-banner-1.png',
+    '/gpu-banner-2.png',
+    '/gpu-banner-3.png',
+    '/gpu-banner-4.png',
+    '/gpu-banner-5.png',
+]
 
 const steps = [
-    'Chọn máy với ping thấp',
-    'Clone/Resume snapshot',
-    'Start VM & kiểm tra',
-    'VPN + Sunshine pairing',
-    'Stream qua Moonlight',
+    { title: 'Chọn máy', desc: 'Ưu tiên vùng gần Việt Nam và ping thấp nhất.' },
+    { title: 'Giữ snapshot', desc: 'Tiếp tục phiên cũ hoặc tạo môi trường mới.' },
+    { title: 'Khởi động VM', desc: 'Máy cloud được chuẩn bị theo gói của bạn.' },
+    { title: 'Kết nối VPN', desc: 'Tải profile, xác nhận route và IP local.' },
+    { title: 'Vào Moonlight', desc: 'Pair Sunshine rồi bắt đầu stream game.' },
 ]
 
 const formatVnd = (amount) => new Intl.NumberFormat('vi-VN').format(amount) + 'đ'
@@ -50,10 +57,8 @@ const formatQuota = (plan) => {
 
 const protectedLinks = {
     app: '/app',
-    faq: '/app/support#faq',
     flow: '/app/wizard',
     plans: '/app/subscriptions',
-    support: '/app/support',
 }
 
 function Landing({ ctx }) {
@@ -109,6 +114,9 @@ function Landing({ ctx }) {
         .slice()
         .sort((a, b) => (a.ping_ms ?? a.ping ?? 9999) - (b.ping_ms ?? b.ping ?? 9999))
         .slice(0, 3)
+    const featuredMachine = topThree[0] || machines[0]
+    const featuredCountry = getCountryData(featuredMachine?.region || featuredMachine?.location)
+    const featuredPing = featuredMachine?.ping_ms ?? featuredMachine?.ping
     const handleAuthEntry = () => {
         ctx?.clearAuth?.()
     }
@@ -118,10 +126,10 @@ function Landing({ ctx }) {
             <header className="landing-nav">
                 <div className="brand">VPN Gaming</div>
                 <div className="nav-links">
-                    <NavLink to={protectedLinks.faq}>FAQ</NavLink>
-                    <NavLink to={protectedLinks.flow}>Quy trình</NavLink>
-                    <NavLink to={protectedLinks.plans}>Gói</NavLink>
-                    <NavLink to={protectedLinks.support}>Support</NavLink>
+                    <a href="#faq">FAQ</a>
+                    <a href="#flow">Quy trình</a>
+                    <a href="#plans">Gói</a>
+                    <a href="#faq">Support</a>
                     <NavLink className="btn ghost" to={buildLoginRedirect(protectedLinks.app)} onClick={handleAuthEntry}>
                         Đăng nhập
                     </NavLink>
@@ -130,10 +138,10 @@ function Landing({ ctx }) {
 
             <section className="hero">
                 <div className="hero-copy">
-                    <p className="pill ghost">VPN-first · Snapshot resume</p>
-                    <h1>Ping thấp, vào game nhanh</h1>
+                    <p className="pill ghost">Cloud gaming cho game thủ Việt</p>
+                    <h1>Thuê máy GPU, ping thấp, vào game nhanh</h1>
                     <p className="muted">
-                        Chọn máy gần bạn, resume từ snapshot, kết nối VPN an toàn và stream qua Moonlight trong vài bước.
+                        Chọn máy gần Việt Nam, khởi tạo phiên chơi, kết nối VPN an toàn và stream qua Moonlight trong vài bước rõ ràng.
                     </p>
                     <div className="actions">
                         <NavLink className="btn primary" to={buildLoginRedirect(protectedLinks.app)} onClick={handleAuthEntry}>
@@ -144,26 +152,40 @@ function Landing({ ctx }) {
                         </NavLink>
                     </div>
                     <div className="hero-badges">
-                        <span className="badge">Rate-limit & MFA</span>
-                        <span className="badge">Cookie HttpOnly</span>
-                        <span className="badge">Encrypt snapshot</span>
+                        <span className="badge">VPN riêng cho phiên</span>
+                        <span className="badge">Snapshot tiếp tục nhanh</span>
+                        <span className="badge">Moonlight / Sunshine</span>
                     </div>
                 </div>
-                <div className="hero-panel" style={{ width: '100%' }}>
-                <div className="card" style={{ background: 'rgba(20, 20, 35, 0.6)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '14px', padding: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--muted)', letterSpacing: '0.5px' }}>🖥️ MÁY KHẢ DỤNG GẦN BẠN</span>
-                        <span className="badge success" style={{ padding: '2px 8px', fontSize: '0.75rem' }}>{idle.length} sẵn sàng</span>
+                <div className="hero-panel">
+                <div className="landing-machine-preview">
+                    <div className="landing-preview-visual">
+                        <img src={HERO_MACHINE_IMAGES[0]} alt="Cloud gaming GPU" />
+                        <div className="landing-preview-overlay">
+                            <span className="badge success">Máy đề xuất</span>
+                            <div>
+                                <p>{featuredCountry.name}</p>
+                                <h2>{featuredMachine?.gpu || 'RTX cloud rig'}</h2>
+                                <span>{featuredMachine?.code || 'Chọn máy sau khi đăng nhập'}</span>
+                            </div>
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div className="landing-machine-head">
+                        <div>
+                            <p className="muted">{idle.length} máy sẵn sàng</p>
+                            <h3>3 máy ping thấp nhất</h3>
+                        </div>
+                        <strong>{Number.isFinite(Number(featuredPing)) ? `${featuredPing} ms` : 'Đang đo'}</strong>
+                    </div>
+                    <div className="landing-machine-list">
                         {loading && <p className="muted">Đang tải danh sách máy...</p>}
                         {!loading && !topThree.length && (
-                            <div style={{ textAlign: 'center', padding: '20px' }}>
+                            <div className="landing-empty">
                                 <p className="muted">Chưa có máy nào từ hệ thống.</p>
                             </div>
                         )}
                         {!loading && topThree.map((m) => {
-                            const country = getCountryData(m.region)
+                            const country = getCountryData(m.region || m.location)
                             const isIdle = m.status === 'idle'
                             const ping = m.ping_ms ?? m.ping ?? 0
                             
@@ -179,60 +201,36 @@ function Landing({ ctx }) {
                             
                             return (
                                 <div key={m.id} className="machine-compact-row">
-                                    {/* Left: Flag & Location info */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                                    <div className="machine-row-main">
                                         {country.flagUrl ? (
                                             <img 
                                                 src={country.flagUrl} 
                                                 alt={country.name} 
-                                                style={{ width: '20px', height: '14px', objectFit: 'cover', borderRadius: '2px', flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} 
                                             />
                                         ) : (
-                                            <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>{country.flag}</span>
+                                            <span>{country.flag}</span>
                                         )}
-                                        <div style={{ minWidth: 0 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                <span style={{ fontWeight: '600', fontSize: '0.85rem', color: '#fff', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                                                    {m.location || m.name || m.code}
-                                                </span>
-                                                <span className="machine-code-pill" style={{ margin: 0 }}>{m.code}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                                                <span className="pulsing-dot" style={{ width: '6px', height: '6px', backgroundColor: isIdle ? '#00e396' : '#feb019', boxShadow: isIdle ? '0 0 8px #00e396' : '0 0 8px #feb019' }}></span>
-                                                <span style={{ fontSize: '0.7rem', color: isIdle ? '#00e396' : '#feb019', fontWeight: '600', textTransform: 'uppercase' }}>
-                                                    {isIdle ? 'Trống' : 'Bận'}
-                                                </span>
-                                            </div>
+                                        <div>
+                                            <strong>{m.location || m.name || country.name}</strong>
+                                            <p>
+                                                <span className={`state-dot ${isIdle ? 'idle' : 'busy'}`} />
+                                                {m.code} · {isIdle ? 'Trống' : 'Bận'}
+                                            </p>
                                         </div>
                                     </div>
-                                    
-                                    {/* Middle: GPU & Ping */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                                        <span style={{ fontSize: '0.75rem', color: '#cbd5e1', background: 'rgba(255,255,255,0.04)', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)', fontWeight: '500' }}>
-                                            {m.spec || m.gpu || 'Chưa cấu hình GPU'}
-                                        </span>
-                                        <div className={`ping-indicator-pill ${pingClass}`} style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
-                                            <span className="ping-dot" style={{ width: '5px', height: '5px' }} />
-                                            <span className="ping-val" style={{ fontSize: '0.75rem' }}>{pingLabel}</span>
+                                    <div className="machine-row-meta">
+                                        <span>{m.gpu || 'GPU cloud'}</span>
+                                        <div className={`ping-indicator-pill ${pingClass}`}>
+                                            <span className="ping-dot" />
+                                            <span className="ping-val">{pingLabel}</span>
                                         </div>
                                     </div>
-                                    
-                                    {/* Right: Start Button */}
                                     <NavLink
                                         className="btn primary"
-                                        to="/app"
-                                        style={{ 
-                                            padding: '6px 12px', 
-                                            fontSize: '0.75rem', 
-                                            fontWeight: '600', 
-                                            borderRadius: '8px',
-                                            flexShrink: 0,
-                                            background: 'linear-gradient(135deg, #F45D48 0%, #d83d28 100%)',
-                                            border: 'none',
-                                            boxShadow: '0 2px 8px rgba(244, 93, 72, 0.2)'
-                                        }}
+                                        to={buildLoginRedirect(`/app/wizard?machineId=${m.id}`)}
+                                        onClick={handleAuthEntry}
                                     >
-                                        Chạy ⚡
+                                        Chạy
                                     </NavLink>
                                 </div>
                             )
@@ -248,21 +246,20 @@ function Landing({ ctx }) {
                         <p className="muted">5 bước</p>
                         <h2>Luồng khởi tạo</h2>
                     </div>
-                    <NavLink className="btn secondary" to={protectedLinks.flow}>
-                        Xem wizard
+                    <NavLink className="btn secondary" to={buildLoginRedirect(protectedLinks.flow)} onClick={handleAuthEntry}>
+                        Xem khởi tạo
                     </NavLink>
                 </div>
-                <div className="timeline landing-timeline">
+                <div className="landing-flow">
                     {steps.map((step, idx) => (
-                        <div key={step} className="card border">
-                            <span className="pill ghost">Bước {idx + 1}</span>
-                            <h4>{step}</h4>
-                            <p className="muted">Minimal downtime · rõ trạng thái</p>
+                        <div key={step.title} className="landing-flow-card">
+                            <em>{String(idx + 1).padStart(2, '0')}</em>
+                            <h4>{step.title}</h4>
+                            <p>{step.desc}</p>
                         </div>
                     ))}
                 </div>
             </section>
-
             <section id="plans" className="section">
                 <div className="section-head">
                     <div>
@@ -332,7 +329,7 @@ function Landing({ ctx }) {
                     </div>
                     <div className="card border">
                         <h4>Tải file .ovpn thế nào?</h4>
-                        <p className="muted">Wizard cung cấp link và QR; cần client OpenVPN/Moonlight.</p>
+                        <p className="muted">Trang khởi tạo cung cấp link và QR; cần client OpenVPN/Moonlight.</p>
                     </div>
                     <div className="card border">
                         <h4>An toàn đăng nhập?</h4>
@@ -347,10 +344,10 @@ function Landing({ ctx }) {
                     <p className="muted small">Portal VM/VPN/Streaming</p>
                 </div>
                 <div className="footer-links">
-                    <NavLink to={protectedLinks.plans}>Gói</NavLink>
-                    <NavLink to={protectedLinks.faq}>FAQ</NavLink>
-                    <NavLink to={protectedLinks.support}>Support</NavLink>
-                    <NavLink to={protectedLinks.support}>Email</NavLink>
+                    <a href="#plans">Gói</a>
+                    <a href="#faq">FAQ</a>
+                    <a href="#faq">Support</a>
+                    <a href="#faq">Email</a>
                 </div>
             </footer>
         </div>

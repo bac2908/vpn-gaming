@@ -315,7 +315,7 @@ function History({ ctx }) {
                                                         className="btn ghost small"
                                                         onClick={() => handleOpenWizard(session)}
                                                     >
-                                                        Mở wizard
+                                                        Mở khởi tạo
                                                     </button>
                                                 )}
                                                 {canResume && (

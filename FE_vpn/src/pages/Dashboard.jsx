@@ -46,6 +46,14 @@ const securityCards = [
     },
 ]
 
+const GPU_BANNER_IMAGES = [
+    '/gpu-banner-1.png',
+    '/gpu-banner-2.png',
+    '/gpu-banner-3.png',
+    '/gpu-banner-4.png',
+    '/gpu-banner-5.png',
+]
+
 function DashIcon({ name, className = '' }) {
     const icons = {
         activity: Activity,
@@ -152,22 +160,23 @@ function Spec({ label, value }) {
     )
 }
 
-function MachineVisual({ activeSession, machine, now }) {
+function MachineVisual({ activeSession, machine, now, bannerIndex = 0, bannerTotal = 1, isActiveMachine = false, imageSrc }) {
     const startedAt = activeSession?.started_at || activeSession?.start_time || activeSession?.created_at || activeSession?.createdAt
     const sessionDuration = formatDurationFrom(startedAt, now)
-    const vpnOnline = Boolean(activeSession?.vpn_online || activeSession?.ip_address)
-    const moonlightReady = Boolean(activeSession?.moonlight_ready || activeSession?.sunshine_paired)
+    const vpnOnline = isActiveMachine && Boolean(activeSession?.vpn_online || activeSession?.ip_address)
+    const moonlightReady = isActiveMachine && Boolean(activeSession?.moonlight_ready || activeSession?.sunshine_paired)
+    const bannerLabel = isActiveMachine ? 'MÁY ĐANG DÙNG' : `MÁY ĐỀ XUẤT ${bannerIndex + 1}/${bannerTotal}`
 
     return (
-        <section className="gd-machine-card gd-machine-visual" aria-label="Máy hiện tại">
+        <section className="gd-machine-card gd-machine-visual" aria-label={isActiveMachine ? 'Máy đang dùng' : 'Máy đề xuất'}>
             <div className="gd-machine-top">
-                <span className="gd-active-pill">MÁY HIỆN TẠI</span>
+                <span className="gd-active-pill">{bannerLabel}</span>
             </div>
 
             <div className="gd-machine-body">
                 <div className="gd-machine-copy">
                     <h2>{getMachineLabel(machine)}</h2>
-                    <p>{activeSession ? 'Phiên hiện tại' : 'Route đề xuất từ hệ thống'}</p>
+                    <p>{isActiveMachine ? 'Phiên hiện tại' : 'Gợi ý ping thấp từ hệ thống'}</p>
                     <div className="gd-metrics">
                         <Metric label="Ping" value={formatPing(machine)} />
                         <Metric label="VPN" value={vpnOnline ? 'Online' : 'Chưa kết nối'} />
@@ -176,7 +185,7 @@ function MachineVisual({ activeSession, machine, now }) {
                 </div>
 
                 <div className="gd-gpu-visual" aria-hidden="true">
-                    <img src="/gpu-neon-panel.png" alt="" />
+                    <img src={imageSrc || '/gpu-neon-panel.png'} alt="" />
                 </div>
             </div>
 
@@ -190,24 +199,24 @@ function MachineVisual({ activeSession, machine, now }) {
             <div className="gd-session-line">
                 <span>
                     <DashIcon name="check" />
-                    Phiên đang hoạt động
+                    {isActiveMachine ? 'Phiên đang hoạt động' : 'Máy tốt trong danh sách đề xuất'}
                 </span>
-                <strong>{sessionDuration ? `Đã chạy ${sessionDuration}` : 'Đang đồng bộ thời gian'}</strong>
+                <strong>{isActiveMachine && sessionDuration ? `Đã chạy ${sessionDuration}` : 'Tự đổi sau vài giây'}</strong>
             </div>
         </section>
     )
 }
 
-function StatusCard({ dot, title, value, icon }) {
+function StatusCard({ dot, title, value, icon, href, ariaLabel }) {
     return (
-        <article className="gd-status-card">
+        <Link className="gd-status-card" to={href} aria-label={ariaLabel || title}>
             <span className={dot === 'waiting' ? 'is-waiting' : ''} />
             <div>
                 <p>{title}</p>
                 <strong>{value}</strong>
             </div>
             <DashIcon name={icon} />
-        </article>
+        </Link>
     )
 }
 
@@ -234,13 +243,14 @@ function Dashboard({ ctx }) {
     const [activeSession, setActiveSession] = useState(null)
     const [subscription, setSubscription] = useState(null)
     const [now, setNow] = useState(() => Date.now())
+    const [bannerIndex, setBannerIndex] = useState(0)
 
     useEffect(() => {
         let cancelled = false
 
         async function load() {
             const [machineResult, sessionResult, subscriptionResult] = await Promise.allSettled([
-                listMachines({ page: 1, page_size: 3, sort: 'best' }),
+                listMachines({ page: 1, page_size: 5, sort: 'best' }),
                 ctx?.token ? getActiveSession(ctx.token) : Promise.resolve(null),
                 ctx?.token ? getMySubscription(ctx.token) : Promise.resolve(null),
             ])
@@ -293,9 +303,24 @@ function Dashboard({ ctx }) {
         })
     }, [machines, activeSession])
 
+    const topMachines = useMemo(() => machines.slice(0, 5), [machines])
+
+    useEffect(() => {
+        if (topMachines.length <= 1) return undefined
+        const timer = window.setInterval(() => {
+            setBannerIndex((current) => (current + 1) % topMachines.length)
+        }, 5200)
+        return () => window.clearInterval(timer)
+    }, [topMachines.length])
+
     const firstMachineId = machines[0]?.id || machines[0]?.machine_id
     const activeMachine = machines.find((machine) => String(machine.id || machine.machine_id) === String(activeSession?.machine_id))
-    const currentMachine = activeMachine || machines[0] || null
+    const safeBannerIndex = topMachines.length ? bannerIndex % topMachines.length : 0
+    const bannerMachine = topMachines[safeBannerIndex] || activeMachine || machines[0] || null
+    const bannerImage = GPU_BANNER_IMAGES[safeBannerIndex % GPU_BANNER_IMAGES.length]
+    const bannerMachineId = bannerMachine?.id || bannerMachine?.machine_id
+    const isBannerActiveMachine = Boolean(activeSession?.machine_id && String(activeSession.machine_id) === String(bannerMachineId))
+    const currentMachine = activeMachine || bannerMachine || machines[0] || null
     const continueHref = activeSession?.id
         ? `/app/wizard?sessionId=${activeSession.id}&machineId=${activeSession.machine_id || firstMachineId || ''}`
         : firstMachineId
@@ -315,7 +340,7 @@ function Dashboard({ ctx }) {
                 <div className="gd-hero-card">
                     <span className="gd-kicker">
                         <DashIcon name="gauge" />
-                        Cloud gaming control center
+                        Trung tâm chơi game cloud
                     </span>
                     <h1>
                         Phiên cloud của bạn <span>đang chạy</span>
@@ -339,14 +364,51 @@ function Dashboard({ ctx }) {
                     </p>
                 </div>
 
-                <MachineVisual activeSession={activeSession} machine={currentMachine} now={now} />
+                <MachineVisual
+                    key={bannerMachineId || bannerIndex}
+                    activeSession={activeSession}
+                    machine={bannerMachine}
+                    now={now}
+                    bannerIndex={safeBannerIndex}
+                    bannerTotal={Math.max(topMachines.length, 1)}
+                    isActiveMachine={isBannerActiveMachine}
+                    imageSrc={bannerImage}
+                />
             </section>
 
             <section className="gd-status-grid" aria-label="Trạng thái phiên">
-                <StatusCard dot={activeSession ? 'online' : 'waiting'} title="Cloud PC" value={currentMachine?.code || 'Chưa chọn'} icon="server" />
-                <StatusCard dot={vpnOnline ? 'online' : 'waiting'} title="VPN" value={vpnOnline ? 'Đã kết nối' : 'Chưa kết nối'} icon="shield" />
-                <StatusCard dot={moonlightReady ? 'online' : 'waiting'} title="Moonlight" value={moonlightReady ? 'Sẵn sàng' : 'Chờ pairing'} icon="monitor" />
-                <StatusCard dot="online" title="Gói / số dư" value={`${packageName} • ${formatCurrency(balance)}`} icon="credit" />
+                <StatusCard
+                    dot={activeSession ? 'online' : 'waiting'}
+                    title="Máy cloud"
+                    value={currentMachine?.code || 'Chưa chọn'}
+                    icon="server"
+                    href="/app/machines"
+                    ariaLabel="Mở trang chọn máy cloud"
+                />
+                <StatusCard
+                    dot={vpnOnline ? 'online' : 'waiting'}
+                    title="VPN"
+                    value={vpnOnline ? 'Đã kết nối' : 'Chưa kết nối'}
+                    icon="shield"
+                    href={continueHref}
+                    ariaLabel="Mở trang khởi tạo để kiểm tra VPN"
+                />
+                <StatusCard
+                    dot={moonlightReady ? 'online' : 'waiting'}
+                    title="Moonlight"
+                    value={moonlightReady ? 'Sẵn sàng' : 'Chờ pairing'}
+                    icon="monitor"
+                    href={continueHref}
+                    ariaLabel="Mở trang khởi tạo để ghép Moonlight"
+                />
+                <StatusCard
+                    dot="online"
+                    title="Gói / số dư"
+                    value={`${packageName} • ${formatCurrency(balance)}`}
+                    icon="credit"
+                    href="/app/subscriptions"
+                    ariaLabel="Mở trang gói dịch vụ và số dư"
+                />
             </section>
 
             <section className="gd-main-grid">
@@ -394,8 +456,8 @@ function Dashboard({ ctx }) {
                     <SidePanel
                         title="Phiên hiện tại"
                         heading="Đang hoạt động"
-                        desc="Quay lại wizard để tải VPN, kiểm tra kết nối và mở Moonlight."
-                        button="Mở wizard"
+                        desc="Quay lại trang khởi tạo phiên để tải VPN, kiểm tra kết nối và mở Moonlight."
+                        button="Mở khởi tạo"
                         href={continueHref}
                         icon="settings"
                     />
