@@ -62,7 +62,7 @@ function AdminLogin({ ctx }) {
                             minLength={8}
                             required
                         />
-                        <small className="muted">Có MFA, lockout tạm nếu sai nhiều lần (mock).</small>
+                        <small className="muted">Có kiểm soát đăng nhập và khóa tạm khi sai nhiều lần.</small>
                     </label>
                     {error && <div className="alert error">{error}</div>}
                     <button className="btn primary" type="submit" disabled={loading}>

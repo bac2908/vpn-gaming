@@ -2,6 +2,7 @@ import './landing.css'
 import { NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { listMachines } from '../api/machines'
+import { listPlans } from '../api/subscriptions'
 import { buildLoginRedirect, buildRegisterRedirect } from '../utils/redirect'
 
 const getCountryData = (region) => {
@@ -40,41 +41,12 @@ const steps = [
     'Stream qua Moonlight',
 ]
 
-const tiers = [
-    {
-        name: 'Gói Cơ Bản',
-        badge: 'Dùng thử',
-        price: 50000,
-        duration: '30 ngày',
-        quota: '50GB băng thông',
-        note: 'Phù hợp để trải nghiệm cloud gaming, kiểm tra ping và thử quy trình VM/VPN.',
-        features: ['Máy khu vực gần nhất', 'Resume snapshot cơ bản', 'Hỗ trợ qua ticket'],
-        cta: 'Bắt đầu thử',
-    },
-    {
-        name: 'Gói Pro',
-        badge: 'Phổ biến',
-        price: 100000,
-        duration: '30 ngày',
-        quota: '100GB băng thông',
-        note: 'Dành cho người chơi thường xuyên, cần hàng đợi ưu tiên và phiên ổn định hơn.',
-        features: ['Ưu tiên máy ping thấp', 'Snapshot resume nhanh', 'Theo dõi phiên và lịch sử'],
-        cta: 'Chọn Pro',
-        featured: true,
-    },
-    {
-        name: 'Gói Premium',
-        badge: 'Hiệu năng cao',
-        price: 200000,
-        duration: '30 ngày',
-        quota: 'Không giới hạn dung lượng',
-        note: 'Dành cho người chơi nhiều, stream thường xuyên và cần hỗ trợ nhanh hơn.',
-        features: ['Ưu tiên GPU mạnh', 'Hỗ trợ nhanh', 'Tối ưu cho Moonlight/Sunshine'],
-        cta: 'Nâng cấp Premium',
-    },
-]
-
 const formatVnd = (amount) => new Intl.NumberFormat('vi-VN').format(amount) + 'đ'
+
+const formatQuota = (plan) => {
+    if (plan?.data_limit_gb == null) return 'Không giới hạn'
+    return `${plan.data_limit_gb}GB băng thông`
+}
 
 const protectedLinks = {
     app: '/app',
@@ -86,21 +58,43 @@ const protectedLinks = {
 
 function Landing({ ctx }) {
     const [machines, setMachines] = useState([])
+    const [plans, setPlans] = useState([])
     const [loading, setLoading] = useState(true)
+    const [plansLoading, setPlansLoading] = useState(true)
 
     useEffect(() => {
         let cancelled = false
 
         async function load() {
-            try {
-                const data = await listMachines({ page: 1, page_size: 12 })
-                if (!cancelled) setMachines(data.items || [])
-            } catch (err) {
-                console.error('Load machines failed', err)
-                if (!cancelled) setMachines([])
-            } finally {
-                if (!cancelled) setLoading(false)
+            const [machineResult, planResult] = await Promise.allSettled([
+                listMachines({ page: 1, page_size: 12 }),
+                listPlans(),
+            ])
+
+            if (cancelled) return
+
+            if (machineResult.status === 'fulfilled') {
+                setMachines(machineResult.value?.items || [])
+            } else {
+                console.error('Load machines failed', machineResult.reason)
+                setMachines([])
             }
+
+            if (planResult.status === 'fulfilled') {
+                const planData = planResult.value
+                const items = Array.isArray(planData?.items)
+                    ? planData.items
+                    : Array.isArray(planData)
+                        ? planData
+                        : []
+                setPlans(items)
+            } else {
+                console.error('Load plans failed', planResult.reason)
+                setPlans([])
+            }
+
+            setLoading(false)
+            setPlansLoading(false)
         }
 
         load()
@@ -159,7 +153,7 @@ function Landing({ ctx }) {
                 <div className="card" style={{ background: 'rgba(20, 20, 35, 0.6)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '14px', padding: '20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                         <span style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--muted)', letterSpacing: '0.5px' }}>🖥️ MÁY KHẢ DỤNG GẦN BẠN</span>
-                        <span className="badge success" style={{ padding: '2px 8px', fontSize: '0.75rem' }}>3 Sẵn sàng</span>
+                        <span className="badge success" style={{ padding: '2px 8px', fontSize: '0.75rem' }}>{idle.length} sẵn sàng</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {loading && <p className="muted">Đang tải danh sách máy...</p>}
@@ -215,11 +209,11 @@ function Landing({ ctx }) {
                                     {/* Middle: GPU & Ping */}
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                                         <span style={{ fontSize: '0.75rem', color: '#cbd5e1', background: 'rgba(255,255,255,0.04)', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.03)', fontWeight: '500' }}>
-                                            {m.spec || m.gpu || 'RTX 3070'}
+                                            {m.spec || m.gpu || 'Chưa cấu hình GPU'}
                                         </span>
                                         <div className={`ping-indicator-pill ${pingClass}`} style={{ padding: '2px 8px', fontSize: '0.75rem' }}>
                                             <span className="ping-dot" style={{ width: '5px', height: '5px' }} />
-                                            <span className="ping-val" style={{ fontSize: '0.75rem' }}>{ping > 0 ? `${ping} ms` : '? ms'}</span>
+                                            <span className="ping-val" style={{ fontSize: '0.75rem' }}>{pingLabel}</span>
                                         </div>
                                     </div>
                                     
@@ -278,42 +272,44 @@ function Landing({ ctx }) {
                             Giá hiển thị bằng VND, trừ trực tiếp từ số dư tài khoản sau khi đăng nhập.
                         </p>
                     </div>
-                    <NavLink className="btn ghost" to={protectedLinks.plans}>
+                    <NavLink className="btn ghost" to={buildRegisterRedirect(protectedLinks.plans)} onClick={handleAuthEntry}>
                         Đăng ký gói
                     </NavLink>
                 </div>
                 <div className="plan-grid">
-                    {tiers.map((tier) => (
-                        <div key={tier.name} className={`card plan ${tier.featured ? 'featured' : ''}`}>
+                    {plansLoading && <p className="muted">Đang tải bảng giá...</p>}
+                    {!plansLoading && !plans.length && <p className="muted">Chưa có gói dịch vụ từ hệ thống.</p>}
+                    {!plansLoading && plans.map((plan, index) => (
+                        <div key={plan.id || plan.code} className={`card plan ${index === 0 ? 'featured' : ''}`}>
                             <div className="plan-top">
                                 <div>
-                                    <span className="plan-badge">{tier.badge}</span>
-                                    <h3>{tier.name}</h3>
+                                    <span className="plan-badge">{plan.active ? 'Đang mở bán' : 'Tạm ẩn'}</span>
+                                    <h3>{plan.name}</h3>
                                 </div>
-                                {tier.featured && <span className="pill">Nên chọn</span>}
+                                {index === 0 && <span className="pill">Gói đầu tiên</span>}
                             </div>
                             <div className="plan-price">
-                                <strong>{formatVnd(tier.price)}</strong>
+                                <strong>{formatVnd(plan.price_cents ?? plan.price ?? 0)}</strong>
                                 <span>/ gói</span>
                             </div>
-                            <p className="muted small plan-summary">{tier.note}</p>
+                            <p className="muted small plan-summary">{plan.description || 'Thông tin gói được lấy từ hệ thống.'}</p>
                             <div className="plan-metrics">
                                 <div>
                                     <span>Thời hạn</span>
-                                    <strong>{tier.duration}</strong>
+                                    <strong>{plan.duration_days ? `${plan.duration_days} ngày` : 'Chưa cấu hình'}</strong>
                                 </div>
                                 <div>
                                     <span>Dung lượng</span>
-                                    <strong>{tier.quota}</strong>
+                                    <strong>{formatQuota(plan)}</strong>
                                 </div>
                             </div>
                             <ul className="plan-features">
-                                {tier.features.map((feature) => (
-                                    <li key={feature}>{feature}</li>
-                                ))}
+                                <li>Mã gói: {plan.code || 'Chưa có mã'}</li>
+                                <li>Tiền tệ: {plan.currency || 'VND'}</li>
+                                <li>Trạng thái: {plan.active ? 'Đang hoạt động' : 'Không hoạt động'}</li>
                             </ul>
-                            <NavLink className="btn secondary" to={protectedLinks.plans}>
-                                {tier.cta}
+                            <NavLink className="btn secondary" to={buildRegisterRedirect(protectedLinks.plans)} onClick={handleAuthEntry}>
+                                Chọn gói
                             </NavLink>
                         </div>
                     ))}
@@ -328,11 +324,11 @@ function Landing({ ctx }) {
                 <div className="faq-grid">
                     <div className="card border">
                         <h4>Ping thấp nhất ở đâu?</h4>
-                        <p className="muted">SG/JP thường &lt;50ms, US ~160ms tuỳ ISP.</p>
+                        <p className="muted">Ping phụ thuộc máy, khu vực và ISP; danh sách máy luôn hiển thị số đo từ hệ thống.</p>
                     </div>
                     <div className="card border">
                         <h4>Snapshot lưu bao lâu?</h4>
-                        <p className="muted">Giữ phiên gần nhất, xoá cũ theo quota, luôn có golden image.</p>
+                        <p className="muted">Thời gian giữ snapshot phụ thuộc chính sách gói và cấu hình quản trị.</p>
                     </div>
                     <div className="card border">
                         <h4>Tải file .ovpn thế nào?</h4>
@@ -348,7 +344,7 @@ function Landing({ ctx }) {
             <footer className="landing-footer">
                 <div className="footer-left">
                     <div className="brand">VPN Gaming</div>
-                    <p className="muted small">Portal VM/VPN/Streaming · 2026</p>
+                    <p className="muted small">Portal VM/VPN/Streaming</p>
                 </div>
                 <div className="footer-links">
                     <NavLink to={protectedLinks.plans}>Gói</NavLink>

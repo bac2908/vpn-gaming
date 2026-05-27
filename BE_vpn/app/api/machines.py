@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -47,6 +48,30 @@ def get_active_user_session(
     machine_service: MachineService = Depends(get_machine_service),
 ):
     return machine_service.get_active_user_session(current_user)
+
+
+@router.get("/sessions/history", response_model=schemas.SessionHistoryPage)
+def get_user_session_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=50),
+    status_filter: str | None = Query(None, alias="status"),
+    machine_id: UUID | None = Query(None),
+    date_from: datetime | None = Query(None),
+    date_to: datetime | None = Query(None),
+    sort: str = Query("recent", pattern="^(recent|oldest)$"),
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    return machine_service.get_user_session_history(
+        current_user=current_user,
+        page=page,
+        page_size=page_size,
+        status_filter=status_filter,
+        machine_id=machine_id,
+        date_from=date_from,
+        date_to=date_to,
+        sort=sort,
+    )
 
 
 @router.post("/sessions/{session_id}/stop", response_model=schemas.SessionOut)

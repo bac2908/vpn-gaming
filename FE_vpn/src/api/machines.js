@@ -30,6 +30,19 @@ export async function getActiveSession(token) {
     return request('/machines/sessions/active', { token })
 }
 
+export async function getSessionHistory(params = {}, token) {
+    const query = buildQuery({
+        page: params.page,
+        page_size: params.pageSize,
+        status: params.status,
+        machine_id: params.machineId,
+        date_from: params.dateFrom,
+        date_to: params.dateTo,
+        sort: params.sort,
+    })
+    return request(`/machines/sessions/history${query}`, { token })
+}
+
 export async function stopSession(sessionId, token) {
     return request(`/machines/sessions/${sessionId}/stop`, { method: 'POST', token })
 }

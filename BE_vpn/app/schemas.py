@@ -116,6 +116,7 @@ class SessionOut(BaseModel):
     id: UUID
     user_id: UUID | None = None
     machine_id: UUID | None = None
+    subscription_id: UUID | None = None
     status: str
     started_at: datetime | None = None
     ended_at: datetime | None = None
@@ -126,6 +127,33 @@ class SessionOut(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class SessionHistoryItemOut(BaseModel):
+    id: UUID
+    status: str
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_seconds: int | None = None
+    ip_address: str | None = None
+    vpn_online: bool = False
+    sunshine_paired: bool = False
+    moonlight_ready: bool = False
+    bytes_up: int = 0
+    bytes_down: int = 0
+    machine_id: UUID | None = None
+    machine: MachineOut | None = None
+    can_resume: bool = False
+
+    class Config:
+        orm_mode = True
+
+
+class SessionHistoryPage(BaseModel):
+    items: list[SessionHistoryItemOut]
+    total: int
+    page: int
+    page_size: int
 
 
 class MachineDetailOut(BaseModel):

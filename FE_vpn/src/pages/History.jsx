@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { getSessionHistory, resumeMachine } from '../api/machines'
 import { getTopupHistory } from '../api/payments'
 
 const TOPUP_PAGE_SIZE = 10
+const SESSION_PAGE_SIZE = 10
 
 function History({ ctx }) {
     const [activeTab, setActiveTab] = useState('sessions')
+    const navigate = useNavigate()
+    const [sessionHistory, setSessionHistory] = useState([])
+    const [sessionLoading, setSessionLoading] = useState(false)
+    const [sessionError, setSessionError] = useState('')
+    const [sessionPage, setSessionPage] = useState(1)
+    const [sessionTotalPages, setSessionTotalPages] = useState(1)
+    const [sessionTotal, setSessionTotal] = useState(0)
+    const [sessionStatusFilter, setSessionStatusFilter] = useState('')
+    const [sessionSort, setSessionSort] = useState('recent')
+    const [resumeLoadingId, setResumeLoadingId] = useState('')
+    const [sessionActionError, setSessionActionError] = useState('')
     const [topupHistory, setTopupHistory] = useState([])
     const [topupLoading, setTopupLoading] = useState(false)
     const [topupError, setTopupError] = useState('')
@@ -12,6 +26,43 @@ function History({ ctx }) {
     const [totalPages, setTotalPages] = useState(1)
     const [topupTotal, setTopupTotal] = useState(0)
     const [statusFilter, setStatusFilter] = useState('')
+
+    useEffect(() => {
+        if (activeTab !== 'sessions') return
+        let cancelled = false
+
+        async function load() {
+            setSessionLoading(true)
+            setSessionError('')
+            try {
+                const data = await getSessionHistory(
+                    {
+                        page: sessionPage,
+                        pageSize: SESSION_PAGE_SIZE,
+                        status: sessionStatusFilter || undefined,
+                        sort: sessionSort,
+                    },
+                    ctx?.token,
+                )
+                if (!cancelled) {
+                    setSessionHistory(data.items || [])
+                    const totalItems = data.total || 0
+                    const size = data.page_size || SESSION_PAGE_SIZE
+                    setSessionTotal(totalItems)
+                    setSessionTotalPages(Math.max(1, Math.ceil(totalItems / size)))
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setSessionError(err.message || 'Không tải được lịch sử phiên')
+                }
+            } finally {
+                if (!cancelled) setSessionLoading(false)
+            }
+        }
+
+        load()
+        return () => { cancelled = true }
+    }, [activeTab, sessionPage, sessionStatusFilter, sessionSort, ctx?.token])
 
     useEffect(() => {
         if (activeTab !== 'topup') return
@@ -54,6 +105,57 @@ function History({ ctx }) {
         return new Date(dateStr).toLocaleString('vi-VN')
     }
 
+    const formatDurationSeconds = (value) => {
+        const total = Number(value)
+        if (!Number.isFinite(total) || total < 0) return '—'
+        const hours = Math.floor(total / 3600)
+        const minutes = Math.floor((total % 3600) / 60)
+        const seconds = Math.floor(total % 60)
+        return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':')
+    }
+
+    const formatSessionDuration = (session) => {
+        if (Number.isFinite(Number(session?.duration_seconds))) {
+            return formatDurationSeconds(session.duration_seconds)
+        }
+        if (!session?.started_at) return '—'
+        const start = new Date(session.started_at)
+        if (Number.isNaN(start.getTime())) return '—'
+        const end = session.ended_at ? new Date(session.ended_at) : new Date()
+        if (Number.isNaN(end.getTime())) return '—'
+        const seconds = Math.max(0, Math.floor((end - start) / 1000))
+        return formatDurationSeconds(seconds)
+    }
+
+    const getSessionStatusBadge = (session) => {
+        if (session?.status === 'active' && !session?.ended_at) {
+            return <span className="badge warning">Đang chạy</span>
+        }
+        if (session?.status === 'stopped') {
+            return <span className="badge success">Đã dừng</span>
+        }
+        if (session?.status === 'ended') {
+            return <span className="badge success">Hoàn tất</span>
+        }
+        if (session?.status === 'failed') {
+            return <span className="badge error">Lỗi</span>
+        }
+        return <span className="badge">{session?.status || '—'}</span>
+    }
+
+    const getMachineLabel = (session) => {
+        const machine = session?.machine
+        if (!machine) return 'Chưa có máy'
+        const parts = [machine.code, machine.location || machine.region].filter(Boolean)
+        return parts.join(' • ')
+    }
+
+    const getMachineDetail = (session) => {
+        const machine = session?.machine
+        if (!machine) return '—'
+        return [machine.gpu, machine.location || machine.region].filter(Boolean).join(' • ') || '—'
+    }
+
     const getStatusBadge = (status) => {
         switch (status) {
             case 'succeeded':
@@ -65,6 +167,34 @@ function History({ ctx }) {
                 return <span className="badge error">Thất bại</span>
             default:
                 return <span className="badge">{status}</span>
+        }
+    }
+
+    const handleOpenWizard = (session) => {
+        const params = new URLSearchParams()
+        if (session?.id) params.set('sessionId', session.id)
+        const machineId = session?.machine_id || session?.machine?.id
+        if (machineId) params.set('machineId', machineId)
+        navigate(`/app/wizard?${params.toString()}`)
+    }
+
+    const handleResumeSession = async (session) => {
+        const machineId = session?.machine_id || session?.machine?.id
+        if (!machineId) {
+            setSessionActionError('Phiên này chưa gắn máy để tiếp tục.')
+            return
+        }
+
+        setSessionActionError('')
+        setResumeLoadingId(session.id)
+        try {
+            const data = await resumeMachine(machineId, ctx?.token)
+            localStorage.setItem('active_session', JSON.stringify(data))
+            navigate(`/app/wizard?sessionId=${data.id}&machineId=${data.machine_id}`)
+        } catch (err) {
+            setSessionActionError(err.message || 'Không thể tiếp tục phiên chơi')
+        } finally {
+            setResumeLoadingId('')
         }
     }
 
@@ -105,12 +235,126 @@ function History({ ctx }) {
             {/* Session History */}
             {activeTab === 'sessions' && (
                 <div className="history-content">
-                    <div className="empty-state">
-                        <div className="empty-icon">🎮</div>
-                        <h3>Chưa có phiên chơi nào</h3>
-                        <p className="muted">Bắt đầu phiên chơi đầu tiên để xem lịch sử tại đây</p>
-                        <a className="btn primary" href="/app/machines">Bắt đầu ngay</a>
+                    <div className="history-filters">
+                        <label className="field">
+                            Trạng thái
+                            <select
+                                value={sessionStatusFilter}
+                                onChange={(e) => {
+                                    setSessionStatusFilter(e.target.value)
+                                    setSessionPage(1)
+                                }}
+                            >
+                                <option value="">Tất cả</option>
+                                <option value="active">Đang chạy</option>
+                                <option value="stopped">Đã dừng</option>
+                            </select>
+                        </label>
+                        <label className="field">
+                            Sắp xếp
+                            <select
+                                value={sessionSort}
+                                onChange={(e) => {
+                                    setSessionSort(e.target.value)
+                                    setSessionPage(1)
+                                }}
+                            >
+                                <option value="recent">Mới nhất</option>
+                                <option value="oldest">Cũ nhất</option>
+                            </select>
+                        </label>
                     </div>
+
+                    {sessionLoading && (
+                        <div className="loading-state">
+                            <div className="spinner"></div>
+                            <p className="muted">Đang tải lịch sử phiên...</p>
+                        </div>
+                    )}
+
+                    {sessionError && <div className="alert error">{sessionError}</div>}
+                    {sessionActionError && <div className="alert error">{sessionActionError}</div>}
+
+                    {!sessionLoading && !sessionError && sessionHistory.length === 0 && (
+                        <div className="empty-state">
+                            <div className="empty-icon">🎮</div>
+                            <h3>Chưa có phiên chơi nào</h3>
+                            <p className="muted">Bắt đầu phiên chơi đầu tiên để xem lịch sử tại đây</p>
+                            <a className="btn primary" href="/app/machines">Bắt đầu ngay</a>
+                        </div>
+                    )}
+
+                    {!sessionLoading && !sessionError && sessionHistory.length > 0 && (
+                        <>
+                            <div className="history-table session-table">
+                                <div className="table-header">
+                                    <div className="col-date">Thời gian</div>
+                                    <div className="col-machine">Máy</div>
+                                    <div className="col-duration">Thời lượng</div>
+                                    <div className="col-status">Trạng thái</div>
+                                    <div className="col-actions">Thao tác</div>
+                                </div>
+                                {sessionHistory.map((session) => {
+                                    const isActive = session.status === 'active' && !session.ended_at
+                                    const canResume = Boolean(session.can_resume)
+                                    return (
+                                        <div key={session.id} className="table-row">
+                                            <div className="col-date">
+                                                <div>{formatDate(session.started_at)}</div>
+                                                <div className="muted">Kết thúc: {formatDate(session.ended_at)}</div>
+                                            </div>
+                                            <div className="col-machine">
+                                                <div>{getMachineLabel(session)}</div>
+                                                <div className="muted">{getMachineDetail(session)}</div>
+                                            </div>
+                                            <div className="col-duration">{formatSessionDuration(session)}</div>
+                                            <div className="col-status">{getSessionStatusBadge(session)}</div>
+                                            <div className="col-actions">
+                                                {isActive && (
+                                                    <button
+                                                        className="btn ghost small"
+                                                        onClick={() => handleOpenWizard(session)}
+                                                    >
+                                                        Mở wizard
+                                                    </button>
+                                                )}
+                                                {canResume && (
+                                                    <button
+                                                        className="btn primary small"
+                                                        onClick={() => handleResumeSession(session)}
+                                                        disabled={resumeLoadingId === session.id}
+                                                    >
+                                                        {resumeLoadingId === session.id ? 'Đang xử lý...' : 'Tiếp tục'}
+                                                    </button>
+                                                )}
+                                                {!isActive && !canResume && <span className="muted">—</span>}
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            <div className="pagination">
+                                <div className="muted">Trang {sessionPage}/{sessionTotalPages} · {sessionTotal} phiên</div>
+                                <div className="actions">
+                                    <button
+                                        className="btn ghost"
+                                        disabled={sessionPage <= 1}
+                                        onClick={() => setSessionPage((p) => Math.max(1, p - 1))}
+                                    >
+                                        Trước
+                                    </button>
+                                    <button
+                                        className="btn ghost"
+                                        disabled={sessionPage >= sessionTotalPages}
+                                        onClick={() => setSessionPage((p) => Math.min(sessionTotalPages, p + 1))}
+                                    >
+                                        Sau
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -298,32 +542,20 @@ function ExportReportModal({ open, onClose, activeTab, topupHistory }) {
                 filename += '.json'
             }
         } else if (reportType === 'sessions') {
-            // Giả lập dữ liệu phiên chơi chất lượng cao
-            const dummySessions = [
-                { id: 'sess_10829', machine: 'RTX 4080 Premium - Singapore', duration: '120 phút', cost: '40.000đ', date: '20-05-2026 14:32' },
-                { id: 'sess_10521', machine: 'RTX 3060 Standard - Tokyo', duration: '90 phút', cost: '18.000đ', date: '18-05-2026 10:15' },
-                { id: 'sess_09812', machine: 'RTX 4080 Premium - Singapore', duration: '180 phút', cost: '60.000đ', date: '15-05-2026 19:40' },
-            ]
             if (format === 'csv') {
                 content = '\uFEFFMã phiên,Máy ảo,Thời gian chơi,Chi phí,Thời điểm bắt đầu\n'
-                dummySessions.forEach(s => {
-                    content += `"${s.id}","${s.machine}","${s.duration}","${s.cost}","${s.date}"\n`
-                })
+                content += 'Chưa có dữ liệu phiên từ hệ thống,—,—,—,—\n'
                 filename += '.csv'
             } else {
-                content = JSON.stringify(dummySessions, null, 2)
+                content = JSON.stringify([], null, 2)
                 filename += '.json'
             }
         } else {
-            // Tất cả
             const allData = {
-                user_email: localStorage.getItem('auth_email') || 'user@example.com',
+                user_email: localStorage.getItem('auth_email') || '',
                 export_date: new Date().toLocaleString('vi-VN'),
                 topups: topupHistory || [],
-                sessions: [
-                    { id: 'sess_10829', machine: 'RTX 4080 Premium - Singapore', duration: '120 phút', cost: '40.000đ', date: '20-05-2026 14:32' },
-                    { id: 'sess_10521', machine: 'RTX 3060 Standard - Tokyo', duration: '90 phút', cost: '18.000đ', date: '18-05-2026 10:15' },
-                ]
+                sessions: [],
             }
             if (format === 'csv') {
                 content = '\uFEFFLoại hoạt động,Thời gian,Thông tin chi tiết,Giá trị giao dịch/Chi phí\n'
@@ -332,9 +564,7 @@ function ExportReportModal({ open, onClose, activeTab, topupHistory }) {
                         content += `"Nạp tiền","${new Date(tx.created_at).toLocaleString('vi-VN')}","Nạp tiền ví MoMo (+)",${tx.amount}\n`
                     })
                 }
-                allData.sessions.forEach(s => {
-                    content += `"Phiên chơi","${s.date}","Thuê máy ${s.machine}","-${s.cost}"\n`
-                })
+                if (!allData.topups.length) content += '"Chưa có dữ liệu",—,—,—\n'
                 filename += '.csv'
             } else {
                 content = JSON.stringify(allData, null, 2)

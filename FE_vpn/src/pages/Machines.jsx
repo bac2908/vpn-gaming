@@ -28,6 +28,17 @@ const getCountryData = (region) => {
     return { flag: '🌐', code: null, name: region || 'Global', flagUrl: null }
 }
 
+const normalizeMachineActionError = (err, fallback) => {
+    const message = err?.message || fallback
+    if (message.toLowerCase().includes('goi dich vu')) {
+        return 'Bạn cần mua gói dịch vụ đang hoạt động trước khi khởi tạo phiên chơi.'
+    }
+    if (message.toLowerCase().includes('phien active')) {
+        return 'Bạn đang có một phiên hoạt động. Hãy tiếp tục hoặc dừng phiên hiện tại trước khi mở máy mới.'
+    }
+    return message
+}
+
 function Machines({ ctx }) {
     const [machines, setMachines] = useState([])
     const [loading, setLoading] = useState(true)
@@ -54,8 +65,19 @@ function Machines({ ctx }) {
 
         async function load() {
             try {
+                setLoading(true)
+                setError('')
                 const minPing = filters.minPing === '' ? undefined : Number(filters.minPing)
                 const maxPing = filters.maxPing === '' ? undefined : Number(filters.maxPing)
+                if (Number.isFinite(minPing) && Number.isFinite(maxPing) && minPing > maxPing) {
+                    if (!cancelled) {
+                        setError('Ping từ không được lớn hơn Ping đến.')
+                        setMachines([])
+                        setTotal(0)
+                    }
+                    return
+                }
+
                 const data = await listMachines({
                     page,
                     page_size: pageSize,
@@ -127,7 +149,7 @@ function Machines({ ctx }) {
             navigate(`/app/wizard?sessionId=${session.id}&machineId=${session.machine_id}`)
             setRefreshKey((v) => v + 1)
         } catch (err) {
-            setError(err.message || 'Không thể bắt đầu phiên')
+            setError(normalizeMachineActionError(err, 'Không thể bắt đầu phiên'))
         }
     }
 
@@ -139,7 +161,7 @@ function Machines({ ctx }) {
             navigate(`/app/wizard?sessionId=${session.id}&machineId=${session.machine_id}`)
             setRefreshKey((v) => v + 1)
         } catch (err) {
-            setError(err.message || 'Không thể tiếp tục snapshot')
+            setError(normalizeMachineActionError(err, 'Không thể tiếp tục snapshot'))
         }
     }
 
@@ -209,6 +231,7 @@ function Machines({ ctx }) {
                         <input
                             type="number"
                             min="0"
+                            max={filters.maxPing || undefined}
                             placeholder="VD: 20"
                             value={filters.minPing}
                             onChange={(e) => updateFilter('minPing', e.target.value)}
@@ -218,7 +241,7 @@ function Machines({ ctx }) {
                         Ping đến
                         <input
                             type="number"
-                            min="0"
+                            min={filters.minPing || '0'}
                             placeholder="VD: 50"
                             value={filters.maxPing}
                             onChange={(e) => updateFilter('maxPing', e.target.value)}
@@ -260,6 +283,17 @@ function Machines({ ctx }) {
                     </label>
                 </div>
             </div>
+
+            {error && (
+                <div className="alert error machine-action-alert">
+                    <span>{error}</span>
+                    {error.includes('gói dịch vụ') && (
+                        <button type="button" className="btn secondary" onClick={() => navigate('/app/subscriptions')}>
+                            Xem gói dịch vụ
+                        </button>
+                    )}
+                </div>
+            )}
 
             <div className="grid grid-3">
                 {loading && <p className="muted">Đang tải danh sách máy...</p>}
@@ -409,8 +443,6 @@ function Machines({ ctx }) {
                     )
                 })}
             </div>
-
-            {error && <p className="muted">{error}</p>}
 
             {detailOpen && (
                 <div className="modal-backdrop" role="dialog" aria-modal="true">

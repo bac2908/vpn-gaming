@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import case
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app import models
@@ -93,6 +93,76 @@ class MachineRepository:
     def get_session_by_id(self, session_id: UUID) -> models.VpnSession | None:
         return self.db.query(models.VpnSession).filter(models.VpnSession.id == session_id).first()
 
+    def list_user_sessions(
+        self,
+        user_id: UUID,
+        page: int,
+        page_size: int,
+        status_filter: str | None,
+        machine_id: UUID | None,
+        date_from,
+        date_to,
+        sort: str,
+    ) -> tuple[list[models.VpnSession], int]:
+        query = self.db.query(models.VpnSession).filter(models.VpnSession.user_id == user_id)
+        if status_filter:
+            query = query.filter(models.VpnSession.status == status_filter)
+        if machine_id:
+            query = query.filter(models.VpnSession.machine_id == machine_id)
+        if date_from:
+            query = query.filter(models.VpnSession.started_at >= date_from)
+        if date_to:
+            query = query.filter(models.VpnSession.started_at <= date_to)
+
+        total = query.count()
+        order_clause = models.VpnSession.started_at.asc() if sort == "oldest" else models.VpnSession.started_at.desc()
+        items = (
+            query.order_by(order_clause, models.VpnSession.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return items, total
+
+    def get_machines_by_ids(self, machine_ids: list[UUID]) -> dict[UUID, models.Machine]:
+        if not machine_ids:
+            return {}
+        items = self.db.query(models.Machine).filter(models.Machine.id.in_(machine_ids)).all()
+        return {item.id: item for item in items}
+
+    def get_latest_ended_session_ids_for_user(
+        self,
+        user_id: UUID,
+        machine_ids: list[UUID],
+    ) -> dict[UUID, UUID]:
+        if not machine_ids:
+            return {}
+
+        subquery = (
+            self.db.query(
+                models.VpnSession.machine_id.label("machine_id"),
+                func.max(models.VpnSession.ended_at).label("max_ended_at"),
+            )
+            .filter(
+                models.VpnSession.user_id == user_id,
+                models.VpnSession.machine_id.in_(machine_ids),
+                models.VpnSession.ended_at.is_not(None),
+            )
+            .group_by(models.VpnSession.machine_id)
+            .subquery()
+        )
+
+        rows = (
+            self.db.query(models.VpnSession.id, models.VpnSession.machine_id)
+            .join(
+                subquery,
+                (models.VpnSession.machine_id == subquery.c.machine_id)
+                & (models.VpnSession.ended_at == subquery.c.max_ended_at),
+            )
+            .all()
+        )
+        return {row.machine_id: row.id for row in rows}
+
     def has_session_log(self, session_id: UUID, message: str) -> bool:
         return (
             self.db.query(models.MachineLog)
@@ -124,8 +194,18 @@ class MachineRepository:
             .first()
         )
 
-    def create_active_session(self, user_id: UUID, machine_id: UUID) -> models.VpnSession:
-        session = models.VpnSession(user_id=user_id, machine_id=machine_id, status="active")
+    def create_active_session(
+        self,
+        user_id: UUID,
+        machine_id: UUID,
+        subscription_id: UUID | None = None,
+    ) -> models.VpnSession:
+        session = models.VpnSession(
+            user_id=user_id,
+            machine_id=machine_id,
+            subscription_id=subscription_id,
+            status="active",
+        )
         self.db.add(session)
         return session
 

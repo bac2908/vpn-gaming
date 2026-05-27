@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Clock3, Gamepad2, Menu as MenuIcon, MoreVertical, Plus, User, Wallet } from 'lucide-react'
 import './App.css'
 import Dashboard from './pages/Dashboard'
 import Machines from './pages/Machines'
@@ -14,10 +15,34 @@ import Register from './pages/auth/Register'
 import ForgotPassword from './pages/auth/ForgotPassword'
 import ResetPassword from './pages/auth/ResetPassword'
 import AdminLogin from './pages/auth/AdminLogin'
-import mock from './utils/mock'
 import { createMomoPayment, getBalance } from './api/payments'
 import { changePassword, fetchMe, logout as logoutApi, normalizeUser, updateProfile } from './api/auth'
 import { buildLoginRedirect, getSafeRedirect } from './utils/redirect'
+
+const DEFAULT_SESSION = {
+  remainingMinutes: 0,
+  queuePosition: null,
+  vpn: {
+    status: 'unknown',
+    ip: null,
+  },
+}
+
+function LauncherIcon({ name, className = '' }) {
+  const icons = {
+    gamepad: Gamepad2,
+    clock: Clock3,
+    wallet: Wallet,
+    plus: Plus,
+    user: User,
+    chevron: ChevronDown,
+    more: MoreVertical,
+    menu: MenuIcon,
+  }
+  const Icon = icons[name] || MenuIcon
+
+  return <Icon className={['launcher-icon', className].filter(Boolean).join(' ')} aria-hidden="true" />
+}
 
 function parseJwt(token) {
   try {
@@ -57,7 +82,7 @@ function App() {
 
   const [token, setToken] = useState(storedToken)
   const [user, setUser] = useState(storedUser || (storedToken ? userFromToken(storedToken, storedEmail) : null))
-  const [session, setSession] = useState(mock.session)
+  const [session, setSession] = useState(DEFAULT_SESSION)
   const [topupOpen, setTopupOpen] = useState(false)
   const [topupAmount, setTopupAmount] = useState(50000)
   const [topupDesc, setTopupDesc] = useState('')
@@ -109,7 +134,7 @@ function App() {
     }
     setToken(null)
     setUser(null)
-    setSession(mock.session)
+    setSession(DEFAULT_SESSION)
     window.location.href = '/login'
   }, [token, setToken, setUser, setSession])
 
@@ -126,7 +151,7 @@ function App() {
     window.sessionStorage?.removeItem('post_login_redirect')
     setToken(null)
     setUser(null)
-    setSession(mock.session)
+    setSession(DEFAULT_SESSION)
   }, [token, setToken, setUser, setSession])
 
   useEffect(() => {
@@ -256,19 +281,164 @@ function Shell({ ctx, children }) {
     return <Navigate to={buildLoginRedirect(target)} replace />
   }
   return (
-    <div className="app-shell">
-      <SideNav session={ctx.session} user={ctx.user} />
-      <main className="app-main">
-        <TopBar
-          user={ctx.user}
-          onTopup={ctx.openTopup}
-          onLogout={ctx.logout}
-          onProfile={ctx.openProfile}
-          onPassword={ctx.openPassword}
-        />
+    <div className="app-shell user-shell">
+      <TopBar
+        user={ctx.user}
+        session={ctx.session}
+        onTopup={ctx.openTopup}
+        onLogout={ctx.logout}
+        onProfile={ctx.openProfile}
+        onPassword={ctx.openPassword}
+      />
+      <main className="app-main user-main">
         <div className="app-content">{children}</div>
       </main>
     </div>
+  )
+}
+
+function AppNav() {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef(null)
+  const nav = [
+    { label: 'Play Center', path: '/app', icon: 'gamepad' },
+    { label: 'Máy', path: '/app/machines' },
+    { label: 'Khởi tạo', path: '/app/wizard' },
+  ]
+  const moreLinks = [
+    { label: 'Lịch sử', path: '/app/history' },
+    { label: 'Gói dịch vụ', path: '/app/subscriptions' },
+    { label: 'Hỗ trợ', path: '/app/support' },
+  ]
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+    if (open) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  return (
+    <>
+      <nav className="app-nav" aria-label="Điều hướng ứng dụng">
+        {nav.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path === '/app'}
+            className={({ isActive }) =>
+              ['nav-item', isActive ? 'active' : ''].filter(Boolean).join(' ')
+            }
+          >
+            {item.icon && <LauncherIcon name={item.icon} />}
+            {item.label}
+          </NavLink>
+        ))}
+      </nav>
+      <div className="utility-menu" ref={menuRef}>
+        <button
+          type="button"
+          className="btn ghost utility-trigger"
+          aria-label="Mở menu"
+          aria-expanded={open}
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          <LauncherIcon name="more" />
+          <span>Menu</span>
+          <LauncherIcon name="chevron" className="chevron-icon" />
+        </button>
+        {open && (
+          <div className="utility-dropdown">
+            {moreLinks.map((link) => (
+              <NavLink
+                key={link.path}
+                to={link.path}
+                className={({ isActive }) =>
+                  ['utility-link', isActive ? 'active' : ''].filter(Boolean).join(' ')
+                }
+                onClick={() => setOpen(false)}
+              >
+                {link.label}
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+function MobileLauncherMenu() {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef(null)
+  const links = [
+    { label: 'Play Center', path: '/app' },
+    { label: 'Máy', path: '/app/machines' },
+    { label: 'Khởi tạo', path: '/app/wizard' },
+    { label: 'Gói dịch vụ', path: '/app/subscriptions' },
+    { label: 'Lịch sử', path: '/app/history' },
+    { label: 'Hỗ trợ', path: '/app/support' },
+  ]
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+    if (open) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  return (
+    <div className="mobile-launcher-menu" ref={menuRef}>
+      <button
+        type="button"
+        className="mobile-menu-button"
+        aria-label="Mở menu"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <LauncherIcon name="menu" />
+      </button>
+      {open && (
+        <div className="mobile-menu-dropdown">
+          {links.map((link) => (
+            <NavLink
+              key={link.path}
+              to={link.path}
+              end={link.path === '/app'}
+              className={({ isActive }) =>
+                ['utility-link', isActive ? 'active' : ''].filter(Boolean).join(' ')
+              }
+              onClick={() => setOpen(false)}
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SideNav({ session, user }) {
+  return (
+    <aside className="sidenav">
+      <div className="brand">VPN Gaming</div>
+      <div className="minutes">
+        <p>Giờ còn lại</p>
+        <h3>{session.remainingMinutes} phút</h3>
+        <span className="badge">Chế độ an toàn</span>
+        <div className="balance-display">
+          <p className="muted">Số dư tài khoản</p>
+          <p className="balance-amount">{formatBalance(user?.balance)}</p>
+        </div>
+      </div>
+      <AppNav />
+    </aside>
   )
 }
 
@@ -295,64 +465,25 @@ function formatBalance(amount) {
   return new Intl.NumberFormat('vi-VN').format(amount || 0) + 'đ'
 }
 
-function SideNav({ session, user }) {
-  const nav = [
-    { label: 'Tổng quan', path: '/app' },
-    { label: 'Máy & phiên', path: '/app/machines' },
-    { label: 'Khởi tạo phiên', path: '/app/wizard' },
-    { label: 'Gói dịch vụ', path: '/app/subscriptions' },
-    { label: 'Lịch sử', path: '/app/history' },
-    { label: 'Hỗ trợ', path: '/app/support' },
-  ]
-  return (
-    <aside className="sidenav">
-      <div className="brand">VPN Gaming</div>
-      <div className="minutes">
-        <p>Giờ còn lại</p>
-        <h3>{session.remainingMinutes} phút</h3>
-        <span className="badge">Safe mode</span>
-        <div className="balance-display">
-          <p className="muted">Số dư tài khoản</p>
-          <p className="balance-amount">{formatBalance(user?.balance)}</p>
-        </div>
-      </div>
-      <nav>
-        {nav.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={({ isActive }) =>
-              ['nav-item', isActive ? 'active' : ''].filter(Boolean).join(' ')
-            }
-          >
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
-  )
+function formatCompactBalance(amount) {
+  const value = Number(amount || 0)
+  if (value >= 1000000) {
+    const millions = value / 1000000
+    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}tr`
+  }
+  if (value >= 1000) return `${Math.round(value / 1000)}k`
+  return `${value}đ`
 }
 
-function TopBar({ user, onTopup, onLogout, onProfile, onPassword }) {
+function TopBar({ user, session, onTopup, onLogout, onProfile, onPassword }) {
   const [accountOpen, setAccountOpen] = useState(false)
   const menuRef = useRef(null)
-  const navigate = useNavigate()
-  const location = useLocation()
 
   const getRoleLabel = (role) => {
     if (role === 'admin') return 'Quản trị viên'
     return 'Khách hàng'
   }
 
-  const handleSecurityClick = () => {
-    if (location.pathname === '/app') {
-      document.getElementById('security-policy-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } else {
-      navigate('/app#security-policy-card')
-    }
-  }
-
-  // Đóng dropdown khi nhấp chuột ra ngoài
   useEffect(() => {
     function handleClickOutside(event) {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
@@ -368,58 +499,99 @@ function TopBar({ user, onTopup, onLogout, onProfile, onPassword }) {
   }, [accountOpen])
 
   return (
-    <header className="topbar">
-      <div className="topbar-left">
-        <h2>Xin chào, {user.name}</h2>
-        <p className="muted">Quản lý phiên chơi, máy ảo, VPN & streaming</p>
-      </div>
-      <div className="topbar-actions">
-        <button className="btn ghost" onClick={handleSecurityClick}>Chính sách bảo mật</button>
-        <button className="btn primary" onClick={onTopup}>Nạp tiền</button>
-        <div className="account-menu" ref={menuRef}>
-          <button className="btn ghost" onClick={() => setAccountOpen((prev) => !prev)}>
-            Tài khoản
-          </button>
-          {accountOpen && (
-            <div className="account-dropdown card">
-              <div className="account-row">
-                <div>
-                  <p className="muted" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tài khoản</p>
-                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600 }}>{user.name}</h4>
-                </div>
-                <span className="pill ghost" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
-                  {getRoleLabel(user.role)}
-                </span>
-              </div>
-              <div className="stack">
-                <div className="row-between">
-                  <span className="muted">Email</span>
-                  <span style={{ fontSize: '0.8rem' }}>{user.email}</span>
-                </div>
-                <div className="row-between">
-                  <span className="muted">ID</span>
-                  <span style={{ fontSize: '0.75rem', opacity: 0.8 }} title={user.id}>{user.id.substring(0, 18)}...</span>
-                </div>
-              </div>
-              <div className="account-actions">
-                <button className="btn ghost" onClick={() => { onProfile(); setAccountOpen(false); }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px', opacity: 0.8 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                  Cập nhật thông tin
-                </button>
-                <button className="btn ghost" onClick={() => { onPassword(); setAccountOpen(false); }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px', opacity: 0.8 }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                  Đổi mật khẩu
-                </button>
-              </div>
-              <div className="account-divider" />
-              <div style={{ display: 'flex', width: '100%' }}>
-                <button className="btn-logout" onClick={() => { onLogout(); setAccountOpen(false); }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px' }}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                  Đăng xuất
-                </button>
-              </div>
+    <header className="topbar launcher-topbar">
+      <div className="launcher-topline">
+        <MobileLauncherMenu />
+
+        <div className="launcher-brand">
+          <span className="brand-mark">VG</span>
+          <div>
+            <strong>VPN Gaming</strong>
+            <span>Cloud play network</span>
+          </div>
+        </div>
+
+        <div className="topbar-nav-group">
+          <AppNav />
+        </div>
+
+        <div className="topbar-actions">
+          <div className="topbar-status-group" aria-label="Trạng thái tài khoản">
+            <div className="launcher-chip">
+              <LauncherIcon name="clock" />
+              <strong>
+                <span className="desktop-value">{session?.remainingMinutes || 0}m</span>
+                <span className="mobile-value">{session?.remainingMinutes || 0}p</span>
+              </strong>
             </div>
-          )}
+            <div className="launcher-chip balance">
+              <LauncherIcon name="wallet" />
+              <strong>
+                <span className="desktop-value">{formatBalance(user?.balance)}</span>
+                <span className="mobile-value">{formatCompactBalance(user?.balance)}</span>
+              </strong>
+            </div>
+          </div>
+          <div className="topbar-command-group">
+            <button className="btn primary topup-button" onClick={onTopup}>
+              <LauncherIcon name="plus" />
+              <span>Nạp tiền</span>
+            </button>
+            <div className="account-menu" ref={menuRef}>
+              <button
+                className="account-avatar-button"
+                aria-label="Mở tài khoản"
+                onClick={() => setAccountOpen((prev) => !prev)}
+              >
+                <span className="account-avatar">
+                  <LauncherIcon name="user" />
+                  <span className="account-status-dot" />
+                </span>
+                <div className="account-user-info">
+                  <span className="account-name">{user?.name || 'Tài khoản'}</span>
+                  <span className="account-plan-badge">{getRoleLabel(user?.role)}</span>
+                </div>
+                <LauncherIcon name="chevron" className="chevron-icon" />
+              </button>
+              {accountOpen && (
+                <div className="account-dropdown card">
+                  <div className="account-row">
+                    <div>
+                      <p className="muted" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tài khoản</p>
+                      <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600 }}>{user.name}</h4>
+                    </div>
+                    <span className="pill ghost" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
+                      {getRoleLabel(user.role)}
+                    </span>
+                  </div>
+                  <div className="stack">
+                    <div className="row-between">
+                      <span className="muted">Email</span>
+                      <span style={{ fontSize: '0.8rem' }}>{user.email}</span>
+                    </div>
+                    <div className="row-between">
+                      <span className="muted">Mã tài khoản</span>
+                      <span style={{ fontSize: '0.75rem', opacity: 0.8 }} title={user.id}>{user.id.substring(0, 18)}...</span>
+                    </div>
+                  </div>
+                  <div className="account-actions">
+                    <button className="btn ghost" onClick={() => { onProfile(); setAccountOpen(false); }}>
+                      Cập nhật thông tin
+                    </button>
+                    <button className="btn ghost" onClick={() => { onPassword(); setAccountOpen(false); }}>
+                      Đổi mật khẩu
+                    </button>
+                  </div>
+                  <div className="account-divider" />
+                  <div style={{ display: 'flex', width: '100%' }}>
+                    <button className="btn-logout" onClick={() => { onLogout(); setAccountOpen(false); }}>
+                      Đăng xuất
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </header>

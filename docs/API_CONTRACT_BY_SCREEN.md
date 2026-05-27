@@ -92,6 +92,19 @@
 - Errors:
   - 404 no snapshot
 
+### Session history (user)
+- UI: /app/history (sessions tab)
+- Endpoint: GET /machines/sessions/history
+- Query:
+  - page, page_size
+  - status (active|stopped|...)
+  - machine_id
+  - date_from, date_to (datetime)
+  - sort: recent|oldest
+- Response:
+  - items: SessionHistoryItemOut[]
+  - total, page, page_size
+
 ### Topup create
 - UI: topup modal
 - Endpoint: POST /payments/momo

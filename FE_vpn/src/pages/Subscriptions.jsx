@@ -1,27 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { listPlans, purchasePlan, getMySubscription } from '../api/subscriptions'
-
-const PLAN_PRESENTATION = {
-    basic: {
-        displayName: 'Gói Cơ Bản',
-        badge: 'Tiết kiệm',
-        useCase: 'Phù hợp để thử hệ thống, test ping và chơi các phiên ngắn.',
-        benefits: ['Máy khu vực gần nhất', 'Resume snapshot cơ bản', 'Hỗ trợ qua ticket'],
-    },
-    pro: {
-        displayName: 'Gói Pro',
-        badge: 'Phổ biến',
-        useCase: 'Dành cho người chơi thường xuyên, cần phiên ổn định và ưu tiên hơn.',
-        benefits: ['Ưu tiên máy ping thấp', 'Snapshot resume nhanh', 'Theo dõi phiên và lịch sử'],
-        featured: true,
-    },
-    premium: {
-        displayName: 'Gói Premium',
-        badge: 'Hiệu năng cao',
-        useCase: 'Dành cho người chơi nhiều, stream thường xuyên và cần hỗ trợ nhanh.',
-        benefits: ['Ưu tiên GPU mạnh', 'Không giới hạn dung lượng', 'Tối ưu Moonlight/Sunshine'],
-    },
-}
 
 const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN').format(amount || 0) + 'đ'
 
@@ -42,23 +20,37 @@ const formatQuota = (plan) => {
 }
 
 const getPlanView = (plan = {}) => {
-    const view = PLAN_PRESENTATION[plan.code] || {}
     return {
-        displayName: view.displayName || plan.name || 'Gói dịch vụ',
-        badge: view.badge || 'Gói dịch vụ',
-        useCase: view.useCase || plan.description || 'Gói dịch vụ giúp tối ưu trải nghiệm.',
-        benefits: view.benefits || ['Kích hoạt ngay sau khi mua', 'Trừ trực tiếp từ số dư', 'Quản lý trong lịch sử'],
-        featured: view.featured,
+        displayName: plan.name || 'Gói dịch vụ',
+        badge: plan.active ? 'Đang mở bán' : 'Tạm ẩn',
+        useCase: plan.description || 'Thông tin gói được lấy từ hệ thống.',
+        benefits: [
+            `Mã gói: ${plan.code || 'Chưa có mã'}`,
+            `Thời hạn: ${plan.duration_days ? `${plan.duration_days} ngày` : 'Chưa cấu hình'}`,
+            `Dung lượng: ${formatQuota(plan)}`,
+        ],
+        featured: false,
     }
 }
 
 function Subscriptions({ ctx }) {
     const token = ctx?.token
+    const balance = Number(ctx?.user?.balance || 0)
     const [plans, setPlans] = useState([])
     const [mySub, setMySub] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
-    const [buying, setBuying] = useState(false)
+    const [success, setSuccess] = useState('')
+    const [buyingPlanId, setBuyingPlanId] = useState('')
+    const [selectedPlan, setSelectedPlan] = useState(null)
+
+    const sortedPlans = useMemo(
+        () => [...plans].sort((a, b) => (a.price_cents ?? a.price ?? 0) - (b.price_cents ?? b.price ?? 0)),
+        [plans],
+    )
+
+    const recommendedPlan = sortedPlans[0]
+    const currentPlan = mySub?.plan || sortedPlans.find((plan) => plan.id === mySub?.plan_id)
 
     useEffect(() => {
         let cancelled = false
@@ -93,23 +85,32 @@ function Subscriptions({ ctx }) {
         }
     }, [token])
 
-    const handlePurchase = async (plan) => {
-        const view = getPlanView(plan)
-        const price = plan.price_cents ?? plan.price ?? 0
-        const confirmed = window.confirm(`Bạn có chắc muốn mua "${view.displayName}" với giá ${formatCurrency(price)}?`)
-        if (!confirmed) return
-
-        setBuying(true)
+    const openPurchaseDialog = (plan) => {
         setError('')
+        setSuccess('')
+        setSelectedPlan(plan)
+    }
+
+    const closePurchaseDialog = () => {
+        if (buyingPlanId) return
+        setSelectedPlan(null)
+    }
+
+    const handlePurchase = async () => {
+        if (!selectedPlan) return
+        setError('')
+        setSuccess('')
+        setBuyingPlanId(selectedPlan.id)
         try {
-            const res = await purchasePlan(plan.id, token)
+            const res = await purchasePlan(selectedPlan.id, token)
             setMySub(res)
             if (ctx?.refreshBalance) ctx.refreshBalance()
-            alert(`Mua ${view.displayName} thành công!`)
+            setSuccess(`Mua ${getPlanView(selectedPlan).displayName} thành công. Gói đã được kích hoạt cho phiên VM/VPN của bạn.`)
+            setSelectedPlan(null)
         } catch (err) {
             setError(err.message || 'Giao dịch thất bại')
         } finally {
-            setBuying(false)
+            setBuyingPlanId('')
         }
     }
 
@@ -124,8 +125,8 @@ function Subscriptions({ ctx }) {
 
     return (
         <div className="stack subscription-page">
-            <div className="section-head">
-                <div>
+            <div className="subscription-compact-head">
+                <div className="subscription-title">
                     <p className="muted">Gói dịch vụ</p>
                     <h2>Nâng cấp trải nghiệm cloud gaming</h2>
                     <p className="muted small">
@@ -135,13 +136,13 @@ function Subscriptions({ ctx }) {
             </div>
 
             {error && <div className="alert error">{error}</div>}
+            {success && <div className="alert success">{success}</div>}
 
             {mySub && (
                 <div className="card highlight subscription-status-card">
-                    <div>
+                    <div className="subscription-status-main">
                         <span className="badge success">Đang sử dụng</span>
-                        <h3>{getPlanView(mySub.plan || {}).displayName || 'Gói cước active'}</h3>
-                        <p className="muted">Gói hiện tại của bạn đang được áp dụng cho toàn bộ phiên VM/VPN.</p>
+                        <h3>{getPlanView(currentPlan || {}).displayName || 'Gói cước active'}</h3>
                     </div>
                     <div className="subscription-status-metrics">
                         <div>
@@ -157,24 +158,35 @@ function Subscriptions({ ctx }) {
             )}
 
             <div className="grid grid-3 subscription-plan-grid">
-                {plans.map((plan) => {
+                {sortedPlans.map((plan) => {
                     const view = getPlanView(plan)
                     const isCurrent = mySub?.plan_id === plan.id
+                    const isRecommended = recommendedPlan?.id === plan.id
+                    const price = plan.price_cents ?? plan.price ?? 0
+                    const hasEnoughBalance = balance >= price
+                    const isBuying = buyingPlanId === plan.id
+                    const actionLabel = isCurrent
+                        ? 'Đang sở hữu'
+                        : hasEnoughBalance
+                            ? mySub ? 'Đổi sang gói này' : 'Mua gói này'
+                            : 'Nạp tiền để mua'
+
                     return (
                         <div
                             key={plan.id}
-                            className={`card subscription-plan ${view.featured ? 'featured' : ''} ${isCurrent ? 'current' : ''}`}
+                            className={`card subscription-plan ${isRecommended ? 'featured' : ''} ${isCurrent ? 'current' : ''}`}
                         >
                             <div className="plan-top">
                                 <div>
                                     <span className="plan-badge">{view.badge}</span>
                                     <h3>{view.displayName}</h3>
                                 </div>
+                                {isRecommended && !isCurrent && <span className="pill ghost">Khuyên dùng</span>}
                                 {isCurrent && <span className="pill">Hiện tại</span>}
                             </div>
 
                             <div className="plan-price">
-                                <strong>{formatCurrency(plan.price_cents ?? plan.price)}</strong>
+                                <strong>{formatCurrency(price)}</strong>
                                 <span>/ gói</span>
                             </div>
 
@@ -197,12 +209,18 @@ function Subscriptions({ ctx }) {
                                 ))}
                             </ul>
 
+                            {!isCurrent && !hasEnoughBalance && (
+                                <div className="plan-balance-warning">
+                                    Cần thêm {formatCurrency(price - balance)} để mua gói này.
+                                </div>
+                            )}
+
                             <button
-                                className={`btn ${view.featured ? 'primary' : 'secondary'}`}
-                                onClick={() => handlePurchase(plan)}
-                                disabled={buying || isCurrent}
+                                className={`btn ${isRecommended ? 'primary' : 'secondary'}`}
+                                onClick={() => (hasEnoughBalance ? openPurchaseDialog(plan) : ctx?.openTopup?.())}
+                                disabled={Boolean(buyingPlanId) || isCurrent}
                             >
-                                {buying ? 'Đang xử lý...' : (isCurrent ? 'Đang sở hữu' : 'Mua gói này')}
+                                {isBuying ? 'Đang xử lý...' : actionLabel}
                             </button>
                         </div>
                     )
@@ -226,6 +244,90 @@ function Subscriptions({ ctx }) {
                     <li>Mỗi tài khoản tại một thời điểm chỉ có thể sở hữu một gói active.</li>
                     <li>Tiền được trừ trực tiếp từ số dư tài khoản, không dùng USD.</li>
                 </ul>
+            </div>
+
+            {selectedPlan && (
+                <PurchasePlanDialog
+                    plan={selectedPlan}
+                    currentPlan={currentPlan}
+                    balance={balance}
+                    buying={buyingPlanId === selectedPlan.id}
+                    onClose={closePurchaseDialog}
+                    onConfirm={handlePurchase}
+                />
+            )}
+        </div>
+    )
+}
+
+function PurchasePlanDialog({ plan, currentPlan, balance, buying, onClose, onConfirm }) {
+    const view = getPlanView(plan)
+    const price = plan.price_cents ?? plan.price ?? 0
+    const balanceAfter = balance - price
+    const isChangingPlan = Boolean(currentPlan?.id && currentPlan.id !== plan.id)
+
+    return (
+        <div
+            className="modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            onMouseDown={(event) => {
+                if (event.target === event.currentTarget) onClose()
+            }}
+        >
+            <div className="modal subscription-confirm-modal" onMouseDown={(event) => event.stopPropagation()}>
+                <div className="modal-header">
+                    <div>
+                        <p className="muted">Xác nhận mua gói</p>
+                        <h3>{view.displayName}</h3>
+                    </div>
+                    <button type="button" className="modal-close" onClick={onClose} disabled={buying} aria-label="Đóng">
+                        ×
+                    </button>
+                </div>
+
+                <div className="stack">
+                    {isChangingPlan && (
+                        <div className="alert info">
+                            Gói hiện tại sẽ được dừng và thay bằng gói mới ngay sau khi giao dịch thành công.
+                        </div>
+                    )}
+
+                    <div className="subscription-confirm-summary">
+                        <div>
+                            <span>Giá gói</span>
+                            <strong>{formatCurrency(price)}</strong>
+                        </div>
+                        <div>
+                            <span>Số dư hiện tại</span>
+                            <strong>{formatCurrency(balance)}</strong>
+                        </div>
+                        <div>
+                            <span>Số dư sau mua</span>
+                            <strong>{formatCurrency(balanceAfter)}</strong>
+                        </div>
+                    </div>
+
+                    <div className="plan-metrics">
+                        <div>
+                            <span>Thời hạn</span>
+                            <strong>{plan.duration_days ? `${plan.duration_days} ngày` : '-'}</strong>
+                        </div>
+                        <div>
+                            <span>Dung lượng</span>
+                            <strong>{formatQuota(plan)}</strong>
+                        </div>
+                    </div>
+
+                    <div className="actions row-between">
+                        <button type="button" className="btn ghost" onClick={onClose} disabled={buying}>
+                            Hủy
+                        </button>
+                        <button type="button" className="btn primary" onClick={onConfirm} disabled={buying}>
+                            {buying ? 'Đang kích hoạt...' : 'Xác nhận mua'}
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     )

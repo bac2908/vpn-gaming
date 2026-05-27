@@ -1,65 +1,260 @@
-import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
-import { listMachines } from '../api/machines'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import {
+    Activity,
+    Camera,
+    ChevronRight,
+    CheckCircle2,
+    Cpu,
+    CreditCard,
+    FileText,
+    Gauge,
+    Monitor,
+    Play,
+    Server,
+    Settings,
+    ShieldCheck,
+    Wifi,
+} from 'lucide-react'
+import { getActiveSession, listMachines } from '../api/machines'
+import { getMySubscription } from '../api/subscriptions'
 
-const getCountryData = (region) => {
-    const r = String(region || '').toLowerCase()
-    if (r.includes('singapore') || r.includes('sg')) {
-        return { flag: '🇸🇬', code: 'sg', name: 'Singapore', flagUrl: 'https://flagcdn.com/sg.svg' }
+const securityCards = [
+    {
+        tag: 'Active',
+        title: 'Tài khoản',
+        desc: 'Rate-limit đăng nhập, lockout tạm thời và chính sách mật khẩu mạnh.',
+        icon: 'shield',
+    },
+    {
+        tag: 'Session accepted',
+        title: 'VPN profile',
+        desc: 'File VPN được cấp theo từng phiên, tránh dùng lại profile cũ giữa các session.',
+        icon: 'file',
+    },
+    {
+        tag: 'Snapshot',
+        title: 'Cloud rig',
+        desc: 'Dừng phiên để trả máy, ghi nhận thời gian kết thúc và giữ trạng thái snapshot.',
+        icon: 'camera',
+    },
+    {
+        tag: 'Minimal',
+        title: 'Log kỹ thuật',
+        desc: 'Chỉ lưu thông tin cần thiết cho vận hành, hỗ trợ và kiểm tra sự cố kết nối.',
+        icon: 'activity',
+    },
+]
+
+function DashIcon({ name, className = '' }) {
+    const icons = {
+        activity: Activity,
+        camera: Camera,
+        check: CheckCircle2,
+        cpu: Cpu,
+        credit: CreditCard,
+        file: FileText,
+        gauge: Gauge,
+        monitor: Monitor,
+        play: Play,
+        chevron: ChevronRight,
+        server: Server,
+        settings: Settings,
+        shield: ShieldCheck,
+        wifi: Wifi,
     }
-    if (
-        r.includes('vietnam') || r.includes('việt nam') || r.includes('vn') || 
-        r.includes('hanoi') || r.includes('hà nội') || r.includes('hcmc') || 
-        r.includes('hồ chí minh') || r.includes('ho chi minh') || r.includes('saigon') || r.includes('sài gòn')
-    ) {
-        return { flag: '🇻🇳', code: 'vn', name: 'Việt Nam', flagUrl: 'https://flagcdn.com/vn.svg' }
-    }
-    if (r.includes('japan') || r.includes('nhat') || r.includes('jp') || r.includes('tokyo')) {
-        return { flag: '🇯🇵', code: 'jp', name: 'Japan', flagUrl: 'https://flagcdn.com/jp.svg' }
-    }
-    if (r.includes('usa') || r.includes('us') || r.includes('mỹ') || r.includes('america')) {
-        return { flag: '🇺🇸', code: 'us', name: 'USA', flagUrl: 'https://flagcdn.com/us.svg' }
-    }
-    if (r.includes('hong kong') || r.includes('hongkong') || r.includes('hk')) {
-        return { flag: '🇭🇰', code: 'hk', name: 'Hong Kong', flagUrl: 'https://flagcdn.com/hk.svg' }
-    }
-    if (r.includes('korea') || r.includes('kr') || r.includes('seoul')) {
-        return { flag: '🇰🇷', code: 'kr', name: 'Korea', flagUrl: 'https://flagcdn.com/kr.svg' }
-    }
-    return { flag: '🌐', code: null, name: region || 'Global', flagUrl: null }
+    const Icon = icons[name] || Server
+
+    return <Icon className={['gd-dash-icon', className].filter(Boolean).join(' ')} aria-hidden="true" />
 }
 
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('vi-VN').format(Number(amount || 0)) + 'đ'
+}
 
-function Stat({ label, value, hint, icon }) {
+function formatDate(value) {
+    if (!value) return 'Chưa có hạn'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'Chưa có hạn'
+    return new Intl.DateTimeFormat('vi-VN').format(date)
+}
+
+function formatDurationFrom(value, now = Date.now()) {
+    if (!value) return null
+    const start = new Date(value)
+    if (Number.isNaN(start.getTime())) return null
+
+    const totalSeconds = Math.max(0, Math.floor((now - start.getTime()) / 1000))
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+
+    return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':')
+}
+
+function getCountryData(region) {
+    const r = String(region || '').toLowerCase()
+    if (r.includes('singapore') || r.includes('sg')) {
+        return { flag: 'SG', flagUrl: 'https://flagcdn.com/sg.svg', name: 'Singapore' }
+    }
+    if (
+        r.includes('vietnam') ||
+        r.includes('việt nam') ||
+        r.includes('viet') ||
+        r.includes('vn') ||
+        r.includes('hanoi') ||
+        r.includes('hà nội') ||
+        r.includes('hcmc') ||
+        r.includes('hồ chí minh') ||
+        r.includes('ho chi minh') ||
+        r.includes('saigon') ||
+        r.includes('sài gòn')
+    ) {
+        return { flag: 'VN', flagUrl: 'https://flagcdn.com/vn.svg', name: 'Việt Nam' }
+    }
+    return { flag: '🌐', flagUrl: null, name: region || 'Chưa rõ vùng' }
+}
+
+function getPingTone(ping) {
+    const value = Number(ping)
+    if (!Number.isFinite(value)) return 'unknown'
+    if (value <= 30) return 'excellent'
+    if (value <= 60) return 'good'
+    return 'slow'
+}
+
+function getMachineLabel(machine) {
+    if (!machine) return 'Chưa chọn máy'
+    const country = getCountryData(machine.region || machine.location)
+    return `${country.name} • ${machine.gpu || machine.code || 'Cloud rig'}`
+}
+
+function formatPing(machine) {
+    const ping = machine?.ping_ms ?? machine?.ping
+    return Number.isFinite(Number(ping)) ? `${ping} ms` : 'Chưa đo'
+}
+
+function Metric({ label, value }) {
     return (
-        <div className="card stat">
-            <div className="stat-header">
-                {icon && <span className="stat-icon">{icon}</span>}
-                <p className="muted">{label}</p>
-            </div>
-            <h3>{value}</h3>
-            {hint && <span className="pill ghost">{hint}</span>}
+        <div className="gd-metric">
+            <span>{label}</span>
+            <strong>{value}</strong>
         </div>
     )
 }
 
+function Spec({ label, value }) {
+    return (
+        <div>
+            <span>{label}</span>
+            <strong>{value}</strong>
+        </div>
+    )
+}
+
+function MachineVisual({ activeSession, machine, now }) {
+    const startedAt = activeSession?.started_at || activeSession?.start_time || activeSession?.created_at || activeSession?.createdAt
+    const sessionDuration = formatDurationFrom(startedAt, now)
+    const vpnOnline = Boolean(activeSession?.vpn_online || activeSession?.ip_address)
+    const moonlightReady = Boolean(activeSession?.moonlight_ready || activeSession?.sunshine_paired)
+
+    return (
+        <section className="gd-machine-card gd-machine-visual" aria-label="Máy hiện tại">
+            <div className="gd-machine-top">
+                <span className="gd-active-pill">MÁY HIỆN TẠI</span>
+            </div>
+
+            <div className="gd-machine-body">
+                <div className="gd-machine-copy">
+                    <h2>{getMachineLabel(machine)}</h2>
+                    <p>{activeSession ? 'Phiên hiện tại' : 'Route đề xuất từ hệ thống'}</p>
+                    <div className="gd-metrics">
+                        <Metric label="Ping" value={formatPing(machine)} />
+                        <Metric label="VPN" value={vpnOnline ? 'Online' : 'Chưa kết nối'} />
+                        <Metric label="Moonlight" value={moonlightReady ? 'Sẵn sàng' : 'Chưa pairing'} />
+                    </div>
+                </div>
+
+                <div className="gd-gpu-visual" aria-hidden="true">
+                    <img src="/gpu-neon-panel.png" alt="" />
+                </div>
+            </div>
+
+            <div className="gd-spec-row">
+                <Spec label="GPU" value={machine?.gpu || 'Chưa cấu hình'} />
+                <Spec label="Mã máy" value={machine?.code || 'Chưa chọn'} />
+                <Spec label="Khu vực" value={machine?.location || machine?.region || 'Chưa cấu hình'} />
+                <Spec label="Trạng thái" value={machine?.status || 'Chưa rõ'} />
+            </div>
+
+            <div className="gd-session-line">
+                <span>
+                    <DashIcon name="check" />
+                    Phiên đang hoạt động
+                </span>
+                <strong>{sessionDuration ? `Đã chạy ${sessionDuration}` : 'Đang đồng bộ thời gian'}</strong>
+            </div>
+        </section>
+    )
+}
+
+function StatusCard({ dot, title, value, icon }) {
+    return (
+        <article className="gd-status-card">
+            <span className={dot === 'waiting' ? 'is-waiting' : ''} />
+            <div>
+                <p>{title}</p>
+                <strong>{value}</strong>
+            </div>
+            <DashIcon name={icon} />
+        </article>
+    )
+}
+
+function SidePanel({ title, heading, desc, button, href, icon = 'settings' }) {
+    return (
+        <article className="gd-side-card">
+            <div className="gd-side-head">
+                <p>{title}</p>
+                <DashIcon name={icon} />
+            </div>
+            <h3>{heading}</h3>
+            <span>{desc}</span>
+            <Link className="gd-side-button" to={href}>
+                {button}
+                <DashIcon name="chevron" />
+            </Link>
+        </article>
+    )
+}
+
 function Dashboard({ ctx }) {
-    const [machines, setMachines] = useState([])
-    const [loading, setLoading] = useState(true)
     const location = useLocation()
+    const [machines, setMachines] = useState([])
+    const [activeSession, setActiveSession] = useState(null)
+    const [subscription, setSubscription] = useState(null)
+    const [now, setNow] = useState(() => Date.now())
 
     useEffect(() => {
         let cancelled = false
 
         async function load() {
-            try {
-                const data = await listMachines({ page: 1, page_size: 50 })
-                if (!cancelled) setMachines(data.items || [])
-            } catch (err) {
-                console.error('Load machines failed', err)
-                if (!cancelled) setMachines([])
-            } finally {
-                if (!cancelled) setLoading(false)
+            const [machineResult, sessionResult, subscriptionResult] = await Promise.allSettled([
+                listMachines({ page: 1, page_size: 3, sort: 'best' }),
+                ctx?.token ? getActiveSession(ctx.token) : Promise.resolve(null),
+                ctx?.token ? getMySubscription(ctx.token) : Promise.resolve(null),
+            ])
+
+            if (cancelled) return
+
+            if (machineResult.status === 'fulfilled') {
+                setMachines(machineResult.value?.items || [])
+            }
+            if (sessionResult.status === 'fulfilled') {
+                setActiveSession(sessionResult.value)
+            }
+            if (subscriptionResult.status === 'fulfilled') {
+                setSubscription(subscriptionResult.value)
             }
         }
 
@@ -67,289 +262,172 @@ function Dashboard({ ctx }) {
         return () => {
             cancelled = true
         }
+    }, [ctx?.token])
+
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 1000)
+        return () => window.clearInterval(timer)
     }, [])
 
     useEffect(() => {
-        if (location.hash === '#security-policy-card') {
-            const timer = setTimeout(() => {
-                const el = document.getElementById('security-policy-card')
-                if (el) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
-            }, 150)
-            return () => clearTimeout(timer)
-        }
-    }, [location])
+        if (location.hash !== '#security') return
+        document.getElementById('security')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, [location.hash])
 
-    const display = machines
-    const idle = display.filter((m) => (m.status || '').toLowerCase() === 'idle')
-    const topPicks = idle.length ? idle : display
-    const topThree = topPicks
-        .slice()
-        .sort((a, b) => (a.ping_ms ?? a.ping ?? 9999) - (b.ping_ms ?? b.ping ?? 9999))
-        .slice(0, 3)
+    const routeLinks = useMemo(() => {
+        return machines.slice(0, 3).map((machine, index) => {
+            const id = machine?.id || machine?.machine_id
+            const country = getCountryData(machine?.region || machine?.location)
+            return {
+                id: id || machine?.code || index + 1,
+                rank: index + 1,
+                flag: country.flag,
+                flagUrl: country.flagUrl,
+                name: country.name,
+                code: machine?.code || 'Chưa có mã',
+                gpu: machine?.gpu || 'Chưa cấu hình GPU',
+                ping: machine?.ping_ms ?? machine?.ping,
+                active: activeSession?.machine_id && String(activeSession.machine_id) === String(id),
+                href: id ? `/app/wizard?machineId=${id}` : '/app/wizard',
+            }
+        })
+    }, [machines, activeSession])
 
-    const formatBalance = (amount) => {
-        return new Intl.NumberFormat('vi-VN').format(amount || 0) + 'đ'
-    }
+    const firstMachineId = machines[0]?.id || machines[0]?.machine_id
+    const activeMachine = machines.find((machine) => String(machine.id || machine.machine_id) === String(activeSession?.machine_id))
+    const currentMachine = activeMachine || machines[0] || null
+    const continueHref = activeSession?.id
+        ? `/app/wizard?sessionId=${activeSession.id}&machineId=${activeSession.machine_id || firstMachineId || ''}`
+        : firstMachineId
+            ? `/app/wizard?machineId=${firstMachineId}`
+            : '/app/wizard'
+    const chooseMachineHref = firstMachineId ? `/app/wizard?machineId=${firstMachineId}` : '/app/machines'
+    const packageName = subscription?.plan?.name || subscription?.plan_name || subscription?.name || 'Chưa có gói'
+    const expiry = formatDate(subscription?.end_at || subscription?.end_date || subscription?.expires_at || subscription?.expired_at)
+    const subscriptionDesc = subscription ? `Hết hạn ${expiry}` : 'Chưa có gói hoạt động'
+    const balance = ctx?.user?.balance ?? 0
+    const vpnOnline = Boolean(activeSession?.vpn_online || activeSession?.ip_address)
+    const moonlightReady = Boolean(activeSession?.moonlight_ready || activeSession?.sunshine_paired)
 
     return (
-        <div className="dashboard">
-            {/* Welcome Section */}
-            <section className="card welcome-card">
-                <div className="welcome-content">
-                    <div className="welcome-text">
-                        <span className="welcome-badge">🎮 Sẵn sàng</span>
-                        <h2>Chào mừng trở lại, {ctx.user?.name || 'Game thủ'}!</h2>
-                        <p className="muted">
-                            Bạn có thể khởi tạo máy mới hoặc tiếp tục từ snapshot cũ.
-                            Hãy đảm bảo bạn còn đủ giờ chơi và chuẩn bị file VPN.
-                        </p>
-                        <div className="actions">
-                            <a className="btn primary" href="/app/wizard">
-                                🚀 Khởi tạo phiên mới
-                            </a>
-                            <a className="btn ghost" href="/app/machines">
-                                Xem máy đang trống
-                            </a>
-                        </div>
+        <div className="gaming-dashboard exact-app-dashboard">
+            <section className="gd-hero-grid">
+                <div className="gd-hero-card">
+                    <span className="gd-kicker">
+                        <DashIcon name="gauge" />
+                        Cloud gaming control center
+                    </span>
+                    <h1>
+                        Phiên cloud của bạn <span>đang chạy</span>
+                    </h1>
+                    <p>
+                        Chọn route ping thấp, bật VPN, ghép Moonlight và vào game từ một luồng duy nhất.
+                    </p>
+                    <div className="gd-actions">
+                        <Link className="btn primary" to={continueHref}>
+                            <DashIcon name="play" />
+                            Tiếp tục phiên
+                        </Link>
+                        <Link className="btn secondary" to={chooseMachineHref}>
+                            <DashIcon name="server" />
+                            Chọn máy
+                        </Link>
                     </div>
-                    <div className="welcome-features">
-                        <div className="feature-tag">
-                            <span className="feature-icon">🔐</span>
-                            <span>VPN-first</span>
-                        </div>
-                        <div className="feature-tag">
-                            <span className="feature-icon">💾</span>
-                            <span>Snapshot resume</span>
-                        </div>
-                        <div className="feature-tag">
-                            <span className="feature-icon">⚡</span>
-                            <span>Low latency</span>
-                        </div>
-                    </div>
+                    <p className="gd-system-line">
+                        <span />
+                        Hệ thống hoạt động ổn định
+                    </p>
                 </div>
+
+                <MachineVisual activeSession={activeSession} machine={currentMachine} now={now} />
             </section>
 
-            {/* Stats Grid */}
-            <section className="stats-grid">
-                <Stat
-                    icon="⏱️"
-                    label="Giờ còn lại"
-                    value={`${ctx.session.remainingMinutes} phút`}
-                    hint="Tính phí khi VM sẵn sàng"
-                />
-                <Stat
-                    icon="💰"
-                    label="Số dư tài khoản"
-                    value={formatBalance(ctx.user?.balance)}
-                    hint="Nạp thêm để chơi"
-                />
-                <Stat
-                    icon="🖥️"
-                    label="Máy trống"
-                    value={`${idle.length}/${display.length || 0}`}
-                    hint="Sẵn sàng sử dụng"
-                />
+            <section className="gd-status-grid" aria-label="Trạng thái phiên">
+                <StatusCard dot={activeSession ? 'online' : 'waiting'} title="Cloud PC" value={currentMachine?.code || 'Chưa chọn'} icon="server" />
+                <StatusCard dot={vpnOnline ? 'online' : 'waiting'} title="VPN" value={vpnOnline ? 'Đã kết nối' : 'Chưa kết nối'} icon="shield" />
+                <StatusCard dot={moonlightReady ? 'online' : 'waiting'} title="Moonlight" value={moonlightReady ? 'Sẵn sàng' : 'Chờ pairing'} icon="monitor" />
+                <StatusCard dot="online" title="Gói / số dư" value={`${packageName} • ${formatCurrency(balance)}`} icon="credit" />
             </section>
 
-            {/* Quick Pick Section */}
-            <section className="card">
-                <div className="section-head">
-                    <div>
-                        <p className="muted">Máy có ping tốt nhất</p>
-                        <h3>Chọn nhanh</h3>
+            <section className="gd-main-grid">
+                <div className="gd-route-panel">
+                    <div className="gd-panel-head">
+                        <div>
+                            <p>Route ping thấp</p>
+                            <h2>Máy nên chọn</h2>
+                        </div>
+                        <Link className="gd-view-all" to="/app/machines">
+                            Xem tất cả
+                            <DashIcon name="chevron" />
+                        </Link>
                     </div>
-                    <a className="btn ghost" href="/app/machines">
-                        Xem tất cả →
-                    </a>
-                </div>
-                <div className="grid grid-3" style={{ marginTop: '20px' }}>
-                    {loading && (
-                        <div className="loading-state" style={{ gridColumn: 'span 3', textAlign: 'center', padding: '40px 0' }}>
-                            <div className="spinner"></div>
-                            <p className="muted">Đang tải danh sách máy...</p>
-                        </div>
-                    )}
-                    {!loading && !topThree.length && (
-                        <div className="empty-state" style={{ gridColumn: 'span 3', textAlign: 'center', padding: '40px 0' }}>
-                            <div className="empty-icon" style={{ fontSize: '3rem', marginBottom: '10px' }}>🖥️</div>
-                            <h4>Chưa có máy nào</h4>
-                            <p className="muted">Hệ thống đang bảo trì hoặc chưa có máy trống</p>
-                        </div>
-                    )}
-                    {!loading && topThree.map((m) => {
-                        const country = getCountryData(m.region)
-                        const isIdle = m.status === 'idle'
-                        const ping = m.ping_ms ?? m.ping ?? 0
-                        
-                        let pingClass = 'ping-high'
-                        let pingLabel = 'Chậm'
-                        if (ping > 0 && ping < 30) {
-                            pingClass = 'ping-low'
-                            pingLabel = 'Cực nhanh'
-                        } else if (ping >= 30 && ping <= 80) {
-                            pingClass = 'ping-mid'
-                            pingLabel = 'Khá tốt'
-                        }
-                        
-                        return (
-                            <div key={m.id} className="machine-premium-card card">
-                                {/* Khối Ảnh Visual & Badge nổi */}
-                                <div className="machine-card-visual-wrapper">
-                                    {/* Đồ họa SVG Server */}
-                                    <svg viewBox="0 0 300 150" className="machine-svg-graphic">
-                                        <defs>
-                                            <linearGradient id={`server-grad-${m.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                                                <stop offset="0%" stopColor="#1a1a35" />
-                                                <stop offset="100%" stopColor="#0b0b18" />
-                                            </linearGradient>
-                                            <linearGradient id={`led-grad-${m.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-                                                <stop offset="0%" stopColor="#F45D48" />
-                                                <stop offset="100%" stopColor="#00B8D9" />
-                                            </linearGradient>
-                                            <filter id={`glow-led-${m.id}`} x="-20%" y="-20%" width="140%" height="140%">
-                                                <feGaussianBlur stdDeviation="3" result="blur" />
-                                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                            </filter>
-                                        </defs>
-                                        <rect width="300" height="150" rx="12" fill={`url(#server-grad-${m.id})`} />
-                                        <line x1="20" y1="35" x2="280" y2="35" stroke="#242442" strokeWidth="2" />
-                                        <line x1="20" y1="75" x2="280" y2="75" stroke="#242442" strokeWidth="2" />
-                                        <line x1="20" y1="115" x2="280" y2="115" stroke="#242442" strokeWidth="2" />
-                                        
-                                        {/* CPU / Glow node */}
-                                        <rect x="245" y="45" width="22" height="22" rx="4" fill="#090a18" stroke="#313159" strokeWidth="1" />
-                                        <circle cx="256" cy="56" r="4.5" fill="#00B8D9" filter={`url(#glow-led-${m.id})`} />
-                                        
-                                        <rect x="245" y="85" width="22" height="22" rx="4" fill="#090a18" stroke="#313159" strokeWidth="1" />
-                                        <circle cx="256" cy="96" r="4.5" fill="#F45D48" filter={`url(#glow-led-${m.id})`} />
- 
-                                        <g opacity="0.9">
-                                            {/* Rack Slot 1 */}
-                                            <rect x="25" y="48" width="165" height="16" rx="4" fill="#101021" stroke="#252549" strokeWidth="1" />
-                                            <rect x="35" y="54" width="70" height="4" rx="2" fill={`url(#led-grad-${m.id})`} />
-                                            <circle cx="130" cy="56" r="3.5" fill="#00ffcc" />
-                                            <circle cx="145" cy="56" r="3.5" fill="#00ffcc" />
-                                            <circle cx="160" cy="56" r="3.5" fill="#ff3b30" />
-                                            
-                                            {/* Rack Slot 2 */}
-                                            <rect x="25" y="88" width="165" height="16" rx="4" fill="#101021" stroke="#252549" strokeWidth="1" />
-                                            <rect x="35" y="94" width="90" height="4" rx="2" fill={`url(#led-grad-${m.id})`} />
-                                            <circle cx="130" cy="96" r="3.5" fill="#00ffcc" />
-                                            <circle cx="145" cy="96" r="3.5" fill="#ffcc00" />
-                                            <circle cx="160" cy="96" r="3.5" fill="#00ffcc" />
-                                        </g>
-                                        
-                                        {/* Lưới Grid */}
-                                        <path d="M 0,10 L 300,10 M 0,20 L 300,20 M 0,30 L 300,30 M 0,40 L 300,40 M 0,50 L 300,50 M 0,60 L 300,60 M 0,70 L 300,70 M 0,80 L 300,80 M 0,90 L 300,90 M 0,100 L 300,100 M 0,110 L 300,110 M 0,120 L 300,120 M 0,130 L 300,130 M 0,140 L 300,140" stroke="#ffffff" strokeWidth="1" opacity="0.015" />
-                                        <path d="M 10,0 L 10,150 M 20,0 L 20,150 M 30,0 L 30,150 M 40,0 L 40,150 M 50,0 L 50,150 M 60,0 L 60,150 M 70,0 L 70,150 M 80,0 L 80,150 M 90,0 L 90,150 M 100,0 L 100,150 M 110,0 L 110,150 M 120,0 L 120,150 M 130,0 L 130,150 M 140,0 L 140,150 M 150,0 L 150,150 M 160,0 L 160,150 M 170,0 L 170,150 M 180,0 L 180,150 M 190,0 L 190,150 M 200,0 L 200,150 M 210,0 L 210,150 M 220,0 L 220,150 M 230,0 L 230,150 M 240,0 L 240,150 M 250,0 L 250,150 M 260,0 L 260,150 M 270,0 L 270,150 M 280,0 L 280,150 M 290,0 L 290,150" stroke="#ffffff" strokeWidth="1" opacity="0.015" />
-                                    </svg>
-                                    
-                                    {/* Country Badge nổi bên góc */}
-                                    <div className="machine-floating-flag" title={country.name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        {country.flagUrl ? (
-                                            <img 
-                                                src={country.flagUrl} 
-                                                alt={country.name} 
-                                                style={{ width: '20px', height: '14px', objectFit: 'cover', borderRadius: '2px', display: 'inline-block', verticalAlign: 'middle', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} 
-                                            />
-                                        ) : (
-                                            <span className="flag-icon" style={{ display: 'inline-block', verticalAlign: 'middle' }}>{country.flag}</span>
-                                        )}
-                                        <span className="flag-label">{country.name}</span>
-                                    </div>
-                                    
-                                    {/* Badge Trạng thái nổi */}
-                                    <div className={`machine-floating-status ${isIdle ? 'idle' : 'busy'}`}>
-                                        {isIdle && <span className="pulsing-dot" />}
-                                        <span>{isIdle ? 'Trống' : 'Bận'}</span>
-                                    </div>
+
+                    <div className="gd-route-list">
+                        {routeLinks.map((machine) => (
+                            <div
+                                className={['gd-route-row', machine.active ? 'active' : ''].filter(Boolean).join(' ')}
+                                key={machine.id}
+                            >
+                                <span className="gd-rank">#{machine.rank}</span>
+                                <span className="gd-flag gd-flag-text">
+                                    {machine.flagUrl ? <img src={machine.flagUrl} alt={machine.name} /> : machine.flag}
+                                </span>
+                                <div className="gd-route-name">
+                                    <strong>{machine.name}</strong>
+                                    <em>{machine.code}</em>
                                 </div>
-                                
-                                {/* Khối Thông tin máy */}
-                                <div className="machine-card-content">
-                                    <div className="machine-card-title-row">
-                                        <h3 className="machine-name">{m.name || m.code}</h3>
-                                        <span className="machine-code-pill">{m.code || m.id?.slice(0, 8)}</span>
-                                    </div>
-                                    
-                                    {/* Khung GPU chuyên nghiệp */}
-                                    <div className="machine-gpu-box">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="gpu-icon">
-                                            <rect x="2" y="2" width="20" height="20" rx="4" />
-                                            <path d="M6 12h12" />
-                                            <path d="M12 6v12" />
-                                        </svg>
-                                        <span className="gpu-label">{m.spec || m.gpu || 'Core i7 · RAM 16GB'}</span>
-                                    </div>
-                                    
-                                    {/* Khối Ping & Network */}
-                                    <div className="machine-network-row">
-                                        <span className="network-label">Độ trễ (Ping)</span>
-                                        <div className={`ping-indicator-pill ${pingClass}`}>
-                                            <span className="ping-dot" />
-                                            <span className="ping-val">{ping > 0 ? `${ping} ms` : '? ms'}</span>
-                                            <span className="ping-txt">({pingLabel})</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                {/* Các nút Hành động */}
-                                <div className="machine-card-actions" style={{ gridTemplateColumns: '1fr' }}>
-                                    <a
-                                        className="btn primary action-start"
-                                        href={`/app/wizard?machineId=${m.id}`}
-                                        style={{ textAlign: 'center', display: 'block' }}
-                                    >
-                                        🎮 Bắt đầu chơi
-                                    </a>
-                                </div>
+                                <p className="gd-route-gpu">{machine.gpu}</p>
+                                <p className={['gd-ping', getPingTone(machine.ping)].filter(Boolean).join(' ')}>
+                                    <DashIcon name="wifi" />
+                                    {Number.isFinite(Number(machine.ping)) ? `${machine.ping} ms` : 'Chưa đo'}
+                                </p>
+                                <Link className="gd-select" to={machine.href}>Chọn</Link>
                             </div>
-                        )
-                    })}
+                        ))}
+                        {!routeLinks.length && (
+                            <p className="gd-empty-row">Chưa có máy từ hệ thống. Hãy thêm máy trong trang quản trị.</p>
+                        )}
+                    </div>
                 </div>
+
+                <aside className="gd-side-stack">
+                    <SidePanel
+                        title="Phiên hiện tại"
+                        heading="Đang hoạt động"
+                        desc="Quay lại wizard để tải VPN, kiểm tra kết nối và mở Moonlight."
+                        button="Mở wizard"
+                        href={continueHref}
+                        icon="settings"
+                    />
+                    <SidePanel
+                        title="Dịch vụ"
+                        heading={packageName}
+                        desc={subscriptionDesc}
+                        button="Quản lý gói"
+                        href="/app/subscriptions"
+                        icon="credit"
+                    />
+                </aside>
             </section>
 
-            {/* Quick Actions */}
-            <section className="quick-actions">
-                <div className="action-card" onClick={ctx.openTopup}>
-                    <div className="action-icon">💳</div>
-                    <div className="action-info">
-                        <h4>Nạp tiền</h4>
-                        <p className="muted">Thanh toán qua MoMo</p>
-                    </div>
+            <section className="gd-security" id="security">
+                <div className="gd-security-intro">
+                    <p>An tâm trải nghiệm</p>
+                    <h2>Chính sách & bảo mật</h2>
+                    <span>Các lớp bảo vệ cho tài khoản, phiên VPN và cloud rig khi chơi từ xa.</span>
                 </div>
-                <a className="action-card" href="/app/history">
-                    <div className="action-icon">📊</div>
-                    <div className="action-info">
-                        <h4>Lịch sử</h4>
-                        <p className="muted">Xem giao dịch & phiên</p>
-                    </div>
-                </a>
-                <a className="action-card" href="/app/support">
-                    <div className="action-icon">💬</div>
-                    <div className="action-info">
-                        <h4>Hỗ trợ</h4>
-                        <p className="muted">FAQ & liên hệ</p>
-                    </div>
-                </a>
-            </section>
-
-            {/* Chính sách & bảo mật */}
-            <section className="card" id="security-policy-card">
-                <div className="section-head">
-                    <div>
-                        <p className="muted">An tâm trải nghiệm</p>
-                        <h3>Chính sách & bảo mật</h3>
-                    </div>
+                <div className="gd-security-grid">
+                    {securityCards.map((card) => (
+                        <article className="gd-security-card" key={card.title}>
+                            <div className="gd-security-icon">
+                                <DashIcon name={card.icon} />
+                            </div>
+                            <span>{card.tag}</span>
+                            <h3>{card.title}</h3>
+                            <p>{card.desc}</p>
+                        </article>
+                    ))}
                 </div>
-                <ul className="bullet" style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <li>Form auth có rate-limit giả lập, lockout tạm thời, policy mật khẩu.</li>
-                    <li>JWT/refresh dự kiến để HttpOnly; tránh lưu token ở localStorage.</li>
-                    <li>CSRF token với các form nhạy cảm (mock sẵn trong auth pages).</li>
-                    <li>Chỉ hiển thị thông tin tối thiểu cho user; log kỹ thuật ở trang Hỗ trợ.</li>
-                </ul>
             </section>
         </div>
     )
