@@ -291,8 +291,55 @@ function Shell({ ctx, children }) {
       />
       <main className="app-main user-main">
         <div className="app-content">{children}</div>
+        <AppFooter />
       </main>
     </div>
+  )
+}
+
+function AppFooter() {
+  return (
+    <footer className="user-app-footer">
+      <div className="user-app-footer-grid">
+        <div className="user-footer-brand">
+          <div className="brand">VPN Gaming</div>
+          <p>Cloud gaming GPU cho game thủ Việt, tối ưu ping thấp, VPN riêng và stream qua Moonlight.</p>
+          <span className="user-footer-status">
+            <i className="status-dot" /> Hệ thống đang hoạt động
+          </span>
+        </div>
+        <div className="user-footer-column">
+          <h4>Sản phẩm</h4>
+          <NavLink to="/app">Play Center</NavLink>
+          <NavLink to="/app/machines">Máy cloud</NavLink>
+          <NavLink to="/app/wizard">Khởi tạo</NavLink>
+          <NavLink to="/app/subscriptions">Gói dịch vụ</NavLink>
+        </div>
+        <div className="user-footer-column">
+          <h4>Hỗ trợ</h4>
+          <NavLink to="/app/support#faq">FAQ</NavLink>
+          <NavLink to="/app/wizard">Quy trình kết nối</NavLink>
+          <NavLink to="/app/support#guide-openvpn">Hướng dẫn OpenVPN</NavLink>
+          <NavLink to="/app/support#guide-moonlight">Hướng dẫn Moonlight</NavLink>
+        </div>
+        <div className="user-footer-column">
+          <h4>Chính sách</h4>
+          <NavLink to="/app/support#terms">Điều khoản sử dụng</NavLink>
+          <NavLink to="/app/support#privacy">Chính sách riêng tư</NavLink>
+          <NavLink to="/app/support#refund">Chính sách hoàn tiền</NavLink>
+          <NavLink to="/app/support#system-status">Trạng thái hệ thống</NavLink>
+        </div>
+      </div>
+      <div className="user-app-footer-bottom">
+        <span>© 2026 VPN Gaming</span>
+        <div>
+          <NavLink to="/app/subscriptions">Gói</NavLink>
+          <NavLink to="/app/support#faq">FAQ</NavLink>
+          <NavLink to="/app/support">Support</NavLink>
+          <NavLink to="/app/support#support-contact">Email</NavLink>
+        </div>
+      </div>
+    </footer>
   )
 }
 

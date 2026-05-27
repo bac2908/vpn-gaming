@@ -124,15 +124,17 @@ function Landing({ ctx }) {
     return (
         <div className="landing">
             <header className="landing-nav">
-                <div className="brand">VPN Gaming</div>
-                <div className="nav-links">
-                    <a href="#faq">FAQ</a>
-                    <a href="#flow">Quy trình</a>
-                    <a href="#plans">Gói</a>
-                    <a href="#faq">Support</a>
-                    <NavLink className="btn ghost" to={buildLoginRedirect(protectedLinks.app)} onClick={handleAuthEntry}>
-                        Đăng nhập
-                    </NavLink>
+                <div className="landing-nav-inner">
+                    <div className="brand">VPN Gaming</div>
+                    <div className="nav-links">
+                        <a href="#faq">FAQ</a>
+                        <a href="#flow">Quy trình</a>
+                        <a href="#plans">Gói</a>
+                        <a href="#support">Support</a>
+                        <NavLink className="btn ghost" to={buildLoginRedirect(protectedLinks.app)} onClick={handleAuthEntry}>
+                            Đăng nhập
+                        </NavLink>
+                    </div>
                 </div>
             </header>
 
@@ -338,16 +340,103 @@ function Landing({ ctx }) {
                 </div>
             </section>
 
-            <footer className="landing-footer">
-                <div className="footer-left">
-                    <div className="brand">VPN Gaming</div>
-                    <p className="muted small">Portal VM/VPN/Streaming</p>
+            <section id="support" className="section landing-support">
+                <div className="section-head">
+                    <div>
+                        <p className="muted">Support</p>
+                        <h2>Hỗ trợ kết nối</h2>
+                        <p className="muted small pricing-note">
+                            Các bước cốt lõi trước khi vào app: chuẩn bị VPN, Moonlight và kiểm tra trạng thái hệ thống.
+                        </p>
+                    </div>
+                    <NavLink className="btn secondary" to={buildLoginRedirect(protectedLinks.app)} onClick={handleAuthEntry}>
+                        Vào Play Center
+                    </NavLink>
                 </div>
-                <div className="footer-links">
-                    <a href="#plans">Gói</a>
-                    <a href="#faq">FAQ</a>
-                    <a href="#faq">Support</a>
-                    <a href="#faq">Email</a>
+                <div className="support-grid">
+                    <div id="guide-openvpn" className="support-card">
+                        <span>OpenVPN</span>
+                        <h3>Kết nối VPN riêng</h3>
+                        <p>Tải file .ovpn trong trang khởi tạo, import vào OpenVPN Connect, bật VPN rồi quay lại web để xác nhận IP local.</p>
+                    </div>
+                    <div id="guide-moonlight" className="support-card">
+                        <span>Moonlight</span>
+                        <h3>Stream qua Sunshine</h3>
+                        <p>Mở Moonlight, thêm máy bằng IP local, nhập PIN trong Sunshine và đánh dấu đã pairing khi kết nối thành công.</p>
+                    </div>
+                    <div id="support-contact" className="support-card">
+                        <span>Liên hệ</span>
+                        <h3>Cần hỗ trợ nhanh?</h3>
+                        <p>Vào Play Center sau khi đăng nhập để kiểm tra phiên, gói dịch vụ và gửi thông tin lỗi khi VPN hoặc Moonlight chưa sẵn sàng.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="policies" className="section landing-policies">
+                <div>
+                    <p className="muted">Chính sách</p>
+                    <h2>Thông tin dịch vụ</h2>
+                </div>
+                <div className="policy-grid">
+                    <div id="terms" className="card border">
+                        <h4>Điều khoản sử dụng</h4>
+                        <p className="muted">Tài khoản dùng cho phiên cloud gaming cá nhân. Không chia sẻ tài khoản, không lạm dụng tài nguyên máy hoặc VPN.</p>
+                    </div>
+                    <div id="privacy" className="card border">
+                        <h4>Chính sách riêng tư</h4>
+                        <p className="muted">Thông tin đăng nhập, giao dịch và lịch sử phiên chỉ dùng để vận hành dịch vụ và hỗ trợ người dùng.</p>
+                    </div>
+                    <div id="refund" className="card border">
+                        <h4>Chính sách hoàn tiền</h4>
+                        <p className="muted">Yêu cầu hoàn tiền được xem xét theo trạng thái gói, lỗi hệ thống và thời lượng sử dụng thực tế.</p>
+                    </div>
+                    <div id="system-status" className="card border">
+                        <h4>Trạng thái hệ thống</h4>
+                        <p className="muted">Máy cloud, cổng VPN và flow khởi tạo được theo dõi trong app. Nếu có lỗi, kiểm tra lại VPN trước khi pair Moonlight.</p>
+                    </div>
+                </div>
+            </section>
+
+            <footer className="landing-footer">
+                <div className="landing-footer-grid">
+                    <div className="footer-brand-block">
+                        <div className="brand">VPN Gaming</div>
+                        <p>Cloud gaming GPU cho game thủ Việt, tối ưu cho ping thấp, VPN riêng và stream qua Moonlight.</p>
+                        <div className="footer-status">
+                            <span className="state-dot idle" />
+                            Hệ thống đang hoạt động
+                        </div>
+                    </div>
+                    <div className="footer-column">
+                        <h4>Sản phẩm</h4>
+                        <NavLink to={buildLoginRedirect(protectedLinks.app)} onClick={handleAuthEntry}>Play Center</NavLink>
+                        <NavLink to={buildLoginRedirect('/app/machines')} onClick={handleAuthEntry}>Máy cloud</NavLink>
+                        <NavLink to={buildLoginRedirect(protectedLinks.flow)} onClick={handleAuthEntry}>Khởi tạo</NavLink>
+                        <NavLink to={buildLoginRedirect(protectedLinks.plans)} onClick={handleAuthEntry}>Gói dịch vụ</NavLink>
+                    </div>
+                    <div className="footer-column">
+                        <h4>Hỗ trợ</h4>
+                        <a href="#faq">FAQ</a>
+                        <a href="#flow">Quy trình kết nối</a>
+                        <a href="#guide-openvpn">Hướng dẫn OpenVPN</a>
+                        <a href="#guide-moonlight">Hướng dẫn Moonlight</a>
+                    </div>
+                    <div className="footer-column">
+                        <h4>Chính sách</h4>
+                        <a href="#terms">Điều khoản sử dụng</a>
+                        <a href="#privacy">Chính sách riêng tư</a>
+                        <a href="#refund">Chính sách hoàn tiền</a>
+                        <a href="#system-status">Trạng thái hệ thống</a>
+                    </div>
+                </div>
+                <div className="landing-footer-bottom">
+                    <span>© 2026 VPN Gaming</span>
+                    <div className="footer-links">
+                        <a href="#plans">Gói</a>
+                        <a href="#faq">FAQ</a>
+                        <a href="#support">Support</a>
+                        <a href="#support-contact">Email</a>
+                    </div>
                 </div>
             </footer>
         </div>

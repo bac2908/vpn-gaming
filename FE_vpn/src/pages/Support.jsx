@@ -143,6 +143,8 @@ function Support() {
             {/* Tích hợp trực tiếp Tài Liệu Hướng Dẫn */}
             <Documentation />
 
+            <PolicySupport />
+
             {/* Info Cards */}
             <div className="grid grid-2">
                 <div className="card info-card" id="security-card">
@@ -172,7 +174,7 @@ function Support() {
             </div>
 
             {/* Contact Form */}
-            <div className="card">
+            <div className="card" id="support-contact">
                 <div className="card-header">
                     <h3>Gửi yêu cầu hỗ trợ</h3>
                 </div>
@@ -224,9 +226,81 @@ function Support() {
     )
 }
 
+function PolicySupport() {
+  const policies = [
+    {
+      id: 'terms',
+      title: 'Điều khoản sử dụng',
+      desc: 'Tài khoản dùng cho phiên cloud gaming cá nhân. Không chia sẻ tài khoản, không khai thác tài nguyên máy hoặc VPN ngoài mục đích chơi game.',
+      points: ['Một tài khoản cho một người dùng', 'Không dùng máy cloud để spam, đào coin hoặc tấn công mạng', 'Phiên có thể bị tạm dừng nếu vi phạm chính sách vận hành'],
+    },
+    {
+      id: 'privacy',
+      title: 'Chính sách riêng tư',
+      desc: 'Thông tin đăng nhập, giao dịch, máy đã chọn và lịch sử phiên chỉ dùng để vận hành dịch vụ, hỗ trợ lỗi và bảo vệ tài khoản.',
+      points: ['Không bán dữ liệu người dùng', 'Ẩn thông tin nhạy cảm khi hỗ trợ', 'Chỉ lưu dữ liệu cần thiết cho vận hành'],
+    },
+    {
+      id: 'refund',
+      title: 'Chính sách hoàn tiền',
+      desc: 'Yêu cầu hoàn tiền được xem xét theo trạng thái gói, lỗi hệ thống và thời lượng sử dụng thực tế của phiên cloud gaming.',
+      points: ['Ưu tiên xử lý lỗi do hệ thống', 'Số dư chưa sử dụng có thể được xem xét hoàn', 'Gói đã dùng lâu sẽ tính theo thời lượng thực tế'],
+    },
+    {
+      id: 'system-status',
+      title: 'Trạng thái hệ thống',
+      desc: 'Theo dõi trạng thái máy cloud, VPN, Moonlight và luồng khởi tạo để biết nên kiểm tra bước nào khi kết nối chưa ổn định.',
+      points: ['Máy cloud: idle, busy hoặc maintenance', 'VPN: profile, route và IP local', 'Moonlight: pairing, stream và độ trễ'],
+    },
+  ]
+
+  return (
+    <section className="card support-policy-card" id="policies">
+      <div className="card-header">
+        <div>
+          <p className="muted">Chính sách</p>
+          <h3>Thông tin dịch vụ</h3>
+        </div>
+      </div>
+      <div className="support-policy-grid">
+        {policies.map((policy) => (
+          <article key={policy.id} className="support-policy-item" id={policy.id} tabIndex="-1">
+            <h4>{policy.title}</h4>
+            <p className="muted">{policy.desc}</p>
+            <ul className="policy-points">
+              {policy.points.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function Documentation() {
+  const location = useLocation()
+  const getTabFromHash = (hash) => {
+    if (hash === '#guide-moonlight') return 'moonlight'
+    if (hash === '#docs-faq') return 'faq'
+    return 'vpn'
+  }
   const [activeTab, setActiveTab] = useState('vpn')
   const [expandedFaq, setExpandedFaq] = useState(null)
+
+  useEffect(() => {
+    if (['#guide-openvpn', '#guide-moonlight', '#docs-faq'].includes(location.hash)) {
+      setActiveTab(getTabFromHash(location.hash))
+    }
+  }, [location.hash])
+
+  useEffect(() => {
+    if (!['#guide-openvpn', '#guide-moonlight', '#docs-faq'].includes(location.hash)) return
+    window.requestAnimationFrame(() => {
+      document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [activeTab, location.hash])
 
   const toggleFaq = (index) => {
     setExpandedFaq(expandedFaq === index ? null : index)
@@ -268,7 +342,7 @@ function Documentation() {
       {/* Tab Content Area */}
       <div style={{ padding: '4px' }}>
         {activeTab === 'vpn' && (
-          <div className="stack" style={{ gap: '16px' }}>
+          <div id="guide-openvpn" className="stack" style={{ gap: '16px' }}>
             <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
               <h4 style={{ color: 'var(--accent)', margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 600 }}>Mạng riêng ảo VPN tối ưu ping</h4>
               <p className="muted" style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
@@ -322,7 +396,7 @@ function Documentation() {
         )}
 
         {activeTab === 'moonlight' && (
-          <div className="stack" style={{ gap: '16px' }}>
+          <div id="guide-moonlight" className="stack" style={{ gap: '16px' }}>
             <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px' }}>
               <h4 style={{ color: 'var(--accent-2)', margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 600 }}>Truyền phát Moonlight (độ trễ bằng 0)</h4>
               <p className="muted" style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>
@@ -373,7 +447,7 @@ function Documentation() {
         )}
 
         {activeTab === 'faq' && (
-          <div className="stack" style={{ gap: '12px' }}>
+          <div id="docs-faq" className="stack" style={{ gap: '12px' }}>
             <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', marginBottom: '4px' }}>
               <h4 style={{ color: '#fff', margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 600 }}>Khắc phục sự cố nhanh</h4>
               <p className="muted" style={{ fontSize: '0.85rem', lineHeight: '1.5', margin: 0 }}>

@@ -199,35 +199,71 @@ function History({ ctx }) {
     }
 
     const [exportOpen, setExportOpen] = useState(false)
+    const activeSessionsCount = sessionHistory.filter((session) => session.status === 'active' && !session.ended_at).length
+    const resumableSessionsCount = sessionHistory.filter((session) => session.can_resume).length
+    const totalSessionSeconds = sessionHistory.reduce((sum, session) => {
+        const value = Number(session?.duration_seconds)
+        if (Number.isFinite(value) && value > 0) return sum + value
+        if (!session?.started_at) return sum
+        const start = new Date(session.started_at)
+        const end = session.ended_at ? new Date(session.ended_at) : new Date()
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return sum
+        return sum + Math.max(0, Math.floor((end - start) / 1000))
+    }, 0)
+    const totalTopupAmount = topupHistory.reduce((sum, tx) => {
+        const amount = Number(tx?.amount)
+        return Number.isFinite(amount) ? sum + amount : sum
+    }, 0)
 
     return (
-        <div className="stack">
-            <div className="section-head">
+        <div className="stack history-page">
+            <div className="section-head history-hero">
                 <div>
                     <p className="muted">Các hoạt động gần đây</p>
                     <h2>Lịch sử</h2>
+                    <span>Theo dõi phiên chơi, giao dịch và các hành động có thể tiếp tục.</span>
                 </div>
                 <div className="actions">
                     <button className="btn ghost" onClick={() => setExportOpen(true)}>
-                        📥 Xuất báo cáo
+                        Xuất báo cáo
                     </button>
                 </div>
             </div>
 
-            {/* Tab Navigation */}
+            <div className="history-summary-grid">
+                <div className="history-summary-card">
+                    <span>Tổng phiên</span>
+                    <strong>{sessionTotal}</strong>
+                    <p>Phiên chơi đã ghi nhận</p>
+                </div>
+                <div className="history-summary-card">
+                    <span>Thời gian chơi</span>
+                    <strong>{formatDurationSeconds(totalSessionSeconds)}</strong>
+                    <p>Tính trên dữ liệu đang hiển thị</p>
+                </div>
+                <div className="history-summary-card">
+                    <span>Có thể tiếp tục</span>
+                    <strong>{resumableSessionsCount}</strong>
+                    <p>{activeSessionsCount} phiên đang chạy</p>
+                </div>
+                <div className="history-summary-card">
+                    <span>Tổng nạp</span>
+                    <strong>{formatMoney(totalTopupAmount)}</strong>
+                    <p>Tính trên trang giao dịch hiện tại</p>
+                </div>
+            </div>
+
             <div className="tab-nav">
                 <button
                     className={`tab-btn ${activeTab === 'sessions' ? 'active' : ''}`}
                     onClick={() => setActiveTab('sessions')}
                 >
-                    <span className="tab-icon">🎮</span>
                     Phiên chơi
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'topup' ? 'active' : ''}`}
                     onClick={() => setActiveTab('topup')}
                 >
-                    <span className="tab-icon">💰</span>
                     Nạp tiền
                 </button>
             </div>
@@ -235,34 +271,40 @@ function History({ ctx }) {
             {/* Session History */}
             {activeTab === 'sessions' && (
                 <div className="history-content">
-                    <div className="history-filters">
-                        <label className="field">
-                            Trạng thái
-                            <select
-                                value={sessionStatusFilter}
-                                onChange={(e) => {
-                                    setSessionStatusFilter(e.target.value)
-                                    setSessionPage(1)
-                                }}
-                            >
-                                <option value="">Tất cả</option>
-                                <option value="active">Đang chạy</option>
-                                <option value="stopped">Đã dừng</option>
-                            </select>
-                        </label>
-                        <label className="field">
-                            Sắp xếp
-                            <select
-                                value={sessionSort}
-                                onChange={(e) => {
-                                    setSessionSort(e.target.value)
-                                    setSessionPage(1)
-                                }}
-                            >
-                                <option value="recent">Mới nhất</option>
-                                <option value="oldest">Cũ nhất</option>
-                            </select>
-                        </label>
+                    <div className="history-toolbar">
+                        <div>
+                            <strong>Phiên chơi</strong>
+                            <span>{sessionTotal} phiên trong lịch sử</span>
+                        </div>
+                        <div className="history-filters">
+                            <label className="field">
+                                Trạng thái
+                                <select
+                                    value={sessionStatusFilter}
+                                    onChange={(e) => {
+                                        setSessionStatusFilter(e.target.value)
+                                        setSessionPage(1)
+                                    }}
+                                >
+                                    <option value="">Tất cả</option>
+                                    <option value="active">Đang chạy</option>
+                                    <option value="stopped">Đã dừng</option>
+                                </select>
+                            </label>
+                            <label className="field">
+                                Sắp xếp
+                                <select
+                                    value={sessionSort}
+                                    onChange={(e) => {
+                                        setSessionSort(e.target.value)
+                                        setSessionPage(1)
+                                    }}
+                                >
+                                    <option value="recent">Mới nhất</option>
+                                    <option value="oldest">Cũ nhất</option>
+                                </select>
+                            </label>
+                        </div>
                     </div>
 
                     {sessionLoading && (
@@ -362,22 +404,28 @@ function History({ ctx }) {
             {activeTab === 'topup' && (
                 <div className="history-content">
                     {/* Filters */}
-                    <div className="history-filters">
-                        <label className="field">
-                            Trạng thái
-                            <select
-                                value={statusFilter}
-                                onChange={(e) => {
-                                    setStatusFilter(e.target.value)
-                                    setPage(1)
-                                }}
-                            >
-                                <option value="">Tất cả</option>
-                                <option value="succeeded">Thành công</option>
-                                <option value="pending">Đang xử lý</option>
-                                <option value="failed">Thất bại</option>
-                            </select>
-                        </label>
+                    <div className="history-toolbar">
+                        <div>
+                            <strong>Nạp tiền</strong>
+                            <span>{topupTotal} giao dịch trong lịch sử</span>
+                        </div>
+                        <div className="history-filters">
+                            <label className="field">
+                                Trạng thái
+                                <select
+                                    value={statusFilter}
+                                    onChange={(e) => {
+                                        setStatusFilter(e.target.value)
+                                        setPage(1)
+                                    }}
+                                >
+                                    <option value="">Tất cả</option>
+                                    <option value="succeeded">Thành công</option>
+                                    <option value="pending">Đang xử lý</option>
+                                    <option value="failed">Thất bại</option>
+                                </select>
+                            </label>
+                        </div>
                     </div>
 
                     {topupLoading && (
@@ -443,9 +491,8 @@ function History({ ctx }) {
             )}
 
             {/* Info Card */}
-            <div className="card info-card">
+            <div className="card info-card history-storage-card">
                 <div className="info-header">
-                    <span className="info-icon">ℹ️</span>
                     <h4>Chính sách lưu trữ</h4>
                 </div>
                 <ul className="info-list">
