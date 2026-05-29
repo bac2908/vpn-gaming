@@ -20,7 +20,7 @@ function Login({ ctx }) {
             const base64Payload = token.split('.')[1]
             const jsonPayload = atob(base64Payload)
             return JSON.parse(jsonPayload)
-        } catch (err) {
+        } catch {
             return null
         }
     }

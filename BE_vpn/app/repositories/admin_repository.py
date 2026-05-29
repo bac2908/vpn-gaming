@@ -102,6 +102,8 @@ class AdminRepository:
         gpu: str | None,
         status: str,
         location: str | None,
+        base_rate_per_minute: int,
+        trial_eligible: bool,
     ) -> models.Machine:
         machine = models.Machine(
             code=code,
@@ -110,6 +112,8 @@ class AdminRepository:
             gpu=gpu,
             status=status,
             location=location,
+            base_rate_per_minute=base_rate_per_minute,
+            trial_eligible=trial_eligible,
         )
         self.db.add(machine)
         return machine
@@ -120,6 +124,7 @@ class AdminRepository:
             .filter(
                 models.VpnSession.machine_id == machine_id,
                 models.VpnSession.status == "active",
+                models.VpnSession.ended_at.is_(None),
             )
             .first()
         )
@@ -132,11 +137,15 @@ class AdminRepository:
 
         total_machines = self.db.query(models.Machine).count()
         idle_machines = self.db.query(models.Machine).filter(models.Machine.status == "idle").count()
-        busy_machines = self.db.query(models.Machine).filter(models.Machine.status == "busy").count()
+        busy_machines = self.db.query(models.Machine).filter(models.Machine.status.in_(("busy", "running", "suspended"))).count()
         maintenance_machines = self.db.query(models.Machine).filter(models.Machine.status == "maintenance").count()
 
         total_sessions = self.db.query(models.VpnSession).count()
-        active_sessions = self.db.query(models.VpnSession).filter(models.VpnSession.status == "active").count()
+        active_sessions = (
+            self.db.query(models.VpnSession)
+            .filter(models.VpnSession.status == "active", models.VpnSession.ended_at.is_(None))
+            .count()
+        )
 
         total_revenue = (
             self.db.query(func.sum(models.TopupTransaction.amount))
@@ -193,7 +202,7 @@ class AdminRepository:
     def machine_statistics(self) -> dict:
         total = self.db.query(models.Machine).count()
         idle = self.db.query(models.Machine).filter(models.Machine.status == "idle").count()
-        busy = self.db.query(models.Machine).filter(models.Machine.status == "busy").count()
+        busy = self.db.query(models.Machine).filter(models.Machine.status.in_(("busy", "running", "suspended"))).count()
         maintenance = self.db.query(models.Machine).filter(models.Machine.status == "maintenance").count()
 
         region_stats = (
@@ -201,7 +210,7 @@ class AdminRepository:
                 models.Machine.region,
                 func.count(models.Machine.id).label("count"),
                 func.count(case((models.Machine.status == "idle", 1))).label("idle"),
-                func.count(case((models.Machine.status == "busy", 1))).label("busy"),
+                func.count(case((models.Machine.status.in_(("busy", "running", "suspended")), 1))).label("busy"),
             )
             .group_by(models.Machine.region)
             .all()

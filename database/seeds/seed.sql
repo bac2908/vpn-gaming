@@ -14,9 +14,9 @@
 -- =====================================================
 INSERT INTO service_plans (code, name, description, price_cents, currency, duration_days, data_limit_gb, active)
 VALUES
-    ('basic', 'Basic', 'Personal cloud gaming access', 50000, 'VND', 30, 50, true),
-    ('pro', 'Pro', 'Higher quota for regular gaming sessions', 100000, 'VND', 30, 100, true),
-    ('premium', 'Premium', 'Unlimited data plan for heavy usage', 200000, 'VND', 30, NULL, true)
+    ('basic', 'Basic', '15% PAYG discount, light priority queue, 1 active snapshot, VN/SG preferred routing', 49000, 'VND', 30, 50, true),
+    ('pro', 'Pro', '25% PAYG discount, priority queue, 5 active snapshots, longer sessions, APAC preferred routing', 99000, 'VND', 30, 100, true),
+    ('premium', 'Premium', '36% PAYG discount, instant reserve queue, 20 active snapshots, global preferred routing, VIP support', 199000, 'VND', 30, NULL, true)
 ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description,
@@ -29,35 +29,37 @@ ON CONFLICT (code) DO UPDATE SET
 -- =====================================================
 -- MACHINES
 -- =====================================================
-INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat)
+INSERT INTO machines (code, region, location, ping_ms, gpu, status, last_heartbeat, base_rate_per_minute, trial_eligible)
 VALUES
-    ('SG-001', 'Singapore', 'Singapore - Data Center 1', 12, 'NVIDIA RTX 4090', 'idle', now()),
-    ('SG-002', 'Singapore', 'Singapore - Data Center 1', 13, 'NVIDIA RTX 4090', 'idle', now()),
-    ('SG-003', 'Singapore', 'Singapore - Data Center 2', 14, 'NVIDIA RTX 3090', 'idle', now()),
-    ('SG-004', 'Singapore', 'Singapore - Data Center 2', 15, 'NVIDIA RTX 3080', 'idle', now()),
-    ('JP-001', 'Japan', 'Tokyo - Data Center 1', 25, 'NVIDIA RTX 4090', 'busy', now()),
-    ('JP-002', 'Japan', 'Tokyo - Data Center 1', 26, 'NVIDIA RTX 4080', 'idle', now()),
-    ('JP-003', 'Japan', 'Osaka - Data Center 2', 28, 'NVIDIA RTX 3090', 'idle', now()),
-    ('JP-004', 'Japan', 'Osaka - Data Center 2', 29, 'NVIDIA RTX 3080', 'idle', now()),
-    ('US-001', 'United States', 'New York - East Coast', 120, 'NVIDIA RTX 4090', 'idle', now()),
-    ('US-002', 'United States', 'New York - East Coast', 121, 'NVIDIA RTX 4080', 'idle', now()),
-    ('US-003', 'United States', 'Los Angeles - West Coast', 140, 'NVIDIA RTX 3090', 'idle', now()),
-    ('US-004', 'United States', 'Los Angeles - West Coast', 142, 'NVIDIA RTX 3080', 'idle', now()),
-    ('KR-001', 'South Korea', 'Seoul - Data Center 1', 45, 'NVIDIA RTX 4090', 'idle', now()),
-    ('KR-002', 'South Korea', 'Seoul - Data Center 1', 46, 'NVIDIA RTX 4080', 'idle', now()),
-    ('HK-001', 'Hong Kong', 'Hong Kong - Data Center 1', 35, 'NVIDIA RTX 3090', 'idle', now()),
-    ('HK-002', 'Hong Kong', 'Hong Kong - Data Center 1', 36, 'NVIDIA RTX 3080', 'idle', now()),
-    ('AU-001', 'Australia', 'Sydney - Data Center 1', 185, 'NVIDIA RTX 3090', 'idle', now()),
-    ('AU-002', 'Australia', 'Sydney - Data Center 1', 186, 'NVIDIA RTX 3080', 'idle', now()),
-    ('VN-001', 'Vietnam', 'Ho Chi Minh City - Data Center 1', 8, 'NVIDIA RTX 4090', 'idle', now()),
-    ('VN-002', 'Vietnam', 'Hanoi - Data Center 1', 12, 'NVIDIA RTX 4080', 'idle', now())
+    ('VN-TRIAL-HAN-3070', 'Vietnam', 'Hanoi - Trial Node', 20, 'NVIDIA RTX 3070', 'idle', now(), 80, true),
+    ('VN-TRIAL-HCM-3070', 'Vietnam', 'Ho Chi Minh City - Trial Node', 22, 'NVIDIA RTX 3070', 'idle', now(), 80, true),
+    ('HK-TRIAL-3080-01', 'Hong Kong', 'Hong Kong - Trial Node 1', 38, 'NVIDIA RTX 3080', 'idle', now(), 100, true),
+    ('HK-TRIAL-3080-02', 'Hong Kong', 'Hong Kong - Trial Node 2', 40, 'NVIDIA RTX 3080', 'idle', now(), 100, true),
+    ('KR-TRIAL-3080-01', 'South Korea', 'Seoul - Trial Node', 55, 'NVIDIA RTX 3080', 'idle', now(), 100, true),
+    ('SG-3080-01', 'Singapore', 'Singapore RTX3080 - Data Center 1', 32, 'NVIDIA RTX 3080', 'idle', now(), 100, false),
+    ('SG-3080-02', 'Singapore', 'Singapore RTX3080 - Data Center 2', 35, 'NVIDIA RTX 3080', 'idle', now(), 100, false),
+    ('JP-3080-01', 'Japan', 'Tokyo RTX3080 - Data Center 1', 45, 'NVIDIA RTX 3080', 'idle', now(), 105, false),
+    ('JP-3080-02', 'Japan', 'Tokyo RTX3080 - Data Center 2', 48, 'NVIDIA RTX 3080', 'idle', now(), 105, false),
+    ('KR-3080-01', 'South Korea', 'Seoul RTX3080 - Data Center', 58, 'NVIDIA RTX 3080', 'idle', now(), 100, false),
+    ('SG-4080-01', 'Singapore', 'Singapore RTX4080 - Data Center 1', 28, 'NVIDIA RTX 4080', 'idle', now(), 140, false),
+    ('SG-4080-02', 'Singapore', 'Singapore RTX4080 - Data Center 2', 30, 'NVIDIA RTX 4080', 'idle', now(), 140, false),
+    ('JP-T4-01', 'Japan', 'Tokyo T4 - Data Center 1', 50, 'NVIDIA T4', 'idle', now(), 60, false),
+    ('JP-T4-02', 'Japan', 'Tokyo T4 - Data Center 2', 52, 'NVIDIA T4', 'idle', now(), 60, false),
+    ('AU-T4-01', 'Australia', 'Sydney T4 - Data Center 1', 90, 'NVIDIA T4', 'idle', now(), 55, false),
+    ('AU-T4-02', 'Australia', 'Sydney T4 - Data Center 2', 95, 'NVIDIA T4', 'idle', now(), 55, false),
+    ('US-T4-01', 'United States', 'San Jose T4 - Data Center 1', 160, 'NVIDIA T4', 'idle', now(), 50, false),
+    ('US-T4-02', 'United States', 'San Jose T4 - Data Center 2', 165, 'NVIDIA T4', 'idle', now(), 50, false),
+    ('US-T4-03', 'United States', 'San Jose T4 - Data Center 3', 170, 'NVIDIA T4', 'idle', now(), 50, false),
+    ('US-T4-04', 'United States', 'San Jose T4 - Data Center 4', 175, 'NVIDIA T4', 'idle', now(), 50, false)
 ON CONFLICT (code) DO UPDATE SET
     region = EXCLUDED.region,
     location = EXCLUDED.location,
     ping_ms = EXCLUDED.ping_ms,
     gpu = EXCLUDED.gpu,
     status = EXCLUDED.status,
-    last_heartbeat = EXCLUDED.last_heartbeat;
+    last_heartbeat = EXCLUDED.last_heartbeat,
+    base_rate_per_minute = EXCLUDED.base_rate_per_minute,
+    trial_eligible = EXCLUDED.trial_eligible;
 
 -- =====================================================
 -- USERS AND CREDENTIALS
@@ -144,7 +146,7 @@ INSERT INTO vpn_sessions (user_id, subscription_id, machine_id, status, started_
 SELECT u.id, s.id, m.id, 'stopped', TIMESTAMPTZ '2026-03-01 10:00:00+07', TIMESTAMPTZ '2026-03-01 11:30:00+07', '10.8.0.12', 420000000, 2100000000
 FROM users u
 JOIN subscriptions s ON s.user_id = u.id AND s.status = 'active'
-JOIN machines m ON m.code = 'SG-001'
+JOIN machines m ON m.code = 'SG-3080-01'
 WHERE u.email = 'demo@example.com'
 AND NOT EXISTS (
     SELECT 1
@@ -158,7 +160,7 @@ INSERT INTO vpn_sessions (user_id, subscription_id, machine_id, status, started_
 SELECT u.id, s.id, m.id, 'active', now() - INTERVAL '30 minutes', '10.8.0.24', 12000000, 85000000
 FROM users u
 JOIN subscriptions s ON s.user_id = u.id AND s.status = 'active'
-JOIN machines m ON m.code = 'JP-001'
+JOIN machines m ON m.code = 'JP-3080-01'
 WHERE u.email = 'demo@example.com'
 AND NOT EXISTS (
     SELECT 1
@@ -174,7 +176,7 @@ AND NOT EXISTS (
 INSERT INTO machine_logs (machine_id, level, message)
 SELECT m.id, 'info', 'Seed startup health check completed'
 FROM machines m
-WHERE m.code = 'SG-001'
+WHERE m.code = 'SG-3080-01'
 AND NOT EXISTS (
     SELECT 1
     FROM machine_logs ml
@@ -185,7 +187,7 @@ AND NOT EXISTS (
 INSERT INTO machine_logs (machine_id, level, message)
 SELECT m.id, 'info', 'Seed active demo session attached'
 FROM machines m
-WHERE m.code = 'JP-001'
+WHERE m.code = 'JP-3080-01'
 AND NOT EXISTS (
     SELECT 1
     FROM machine_logs ml

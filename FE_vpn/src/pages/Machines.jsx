@@ -54,8 +54,11 @@ const getCountryData = (region) => {
 
 const normalizeMachineActionError = (err, fallback) => {
     const message = err?.message || fallback
+    const lower = message.toLowerCase()
+    if (lower.includes('so du')) return 'Số dư không đủ để chơi phút tiếp theo. Vui lòng nạp thêm tiền.'
+    if (lower.includes('membership')) return message
     if (message.toLowerCase().includes('goi dich vu')) {
-        return 'Bạn cần mua gói dịch vụ đang hoạt động trước khi khởi tạo phiên chơi.'
+        return 'Membership chỉ là quyền lợi giảm giá; bạn vẫn có thể chơi bằng số dư ví.'
     }
     if (message.toLowerCase().includes('phien active')) {
         return 'Bạn đang có một phiên hoạt động. Hãy tiếp tục hoặc dừng phiên hiện tại trước khi mở máy mới.'
@@ -88,10 +91,24 @@ const formatSessionDuration = (session) => {
     return `${hours} giờ ${minutes} phút`
 }
 
+const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN').format(Number(amount || 0)) + 'đ'
+const formatRate = (rate) => `${formatCurrency(rate)}/phút`
+const formatHourly = (amount) => `${formatCurrency(amount)}/giờ`
+const getStartLabel = (machine, isIdle) => {
+    if (!isIdle) return 'Máy đang bận'
+    if (machine.can_start) return 'Khởi tạo máy này'
+    const reason = String(machine.access_reason || '').toLowerCase()
+    if (reason.includes('so du')) return 'Nạp tiền để chơi'
+    if (reason.includes('cooldown')) return 'Đang cooldown'
+    return 'Nạp tiền để chơi'
+}
+
 const getStatusView = (status) => {
     if (status === 'idle') return { label: 'Trống', tone: 'success' }
-    if (status === 'busy') return { label: 'Đang bận', tone: 'warning' }
+    if (status === 'busy' || status === 'running') return { label: 'Đang chạy', tone: 'warning' }
+    if (status === 'suspended') return { label: 'Cooldown', tone: 'warning' }
     if (status === 'maintenance') return { label: 'Bảo trì', tone: 'danger' }
+    if (status === 'offline') return { label: 'Offline', tone: 'danger' }
     return { label: status || 'Chưa rõ', tone: 'muted' }
 }
 
@@ -124,6 +141,7 @@ function Machines({ ctx }) {
     const [detailError, setDetailError] = useState('')
     const [detail, setDetail] = useState(null)
     const [detailVisual, setDetailVisual] = useState(MACHINE_CARD_IMAGES[0])
+    const token = ctx?.token
 
     useEffect(() => {
         let cancelled = false
@@ -152,7 +170,7 @@ function Machines({ ctx }) {
                     min_ping: Number.isFinite(minPing) ? minPing : undefined,
                     max_ping: Number.isFinite(maxPing) ? maxPing : undefined,
                     sort: filters.sort,
-                })
+                }, token)
                 if (!cancelled) {
                     setMachines(data.items || [])
                     setTotal(data.total || 0)
@@ -172,11 +190,10 @@ function Machines({ ctx }) {
         return () => {
             cancelled = true
         }
-    }, [page, pageSize, filters, refreshKey])
+    }, [page, pageSize, filters, refreshKey, token])
 
     const display = machines
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
-    const token = ctx?.token
     const navigate = useNavigate()
     const hasActiveFilters = Boolean(
         filters.region ||
@@ -373,7 +390,22 @@ function Machines({ ctx }) {
                     const visualSrc = MACHINE_CARD_IMAGES[globalMachineIndex % MACHINE_CARD_IMAGES.length]
                     const country = getCountryData(m.region)
                     const isIdle = m.status === 'idle'
+                    const statusView = getStatusView(m.status)
                     const ping = m.ping_ms ?? m.ping ?? 0
+                    const rate = Number(m.play_rate_per_minute || 0)
+                    const standardRate = Number(m.standard_rate_per_minute ?? m.base_rate_per_minute ?? rate)
+                    const discountPercent = Number(m.discount_percent || 0)
+                    const trialRemaining = Number(m.trial_minutes_remaining || 0)
+                    const hasTrialQuota = Boolean(m.trial_eligible && trialRemaining > 0)
+                    const hourly = Number(m.hourly_estimate || rate * 60)
+                    const needsTopup = Boolean(m.access_allowed && !m.can_start && String(m.access_reason || '').toLowerCase().includes('so du'))
+                    const primaryActionIsResume = Boolean(m.can_resume)
+                    const startDisabled = !isIdle || (!m.can_start && !needsTopup)
+                    const startLabel = needsTopup
+                        ? getStartLabel(m, isIdle)
+                        : primaryActionIsResume
+                            ? 'Resume Snapshot'
+                            : '⚡ Start Now'
 
                     let pingClass = 'ping-high'
                     let pingLabel = 'Chậm'
@@ -389,13 +421,19 @@ function Machines({ ctx }) {
                         <div key={m.id} className="machine-premium-card card">
                             <div className="machine-card-visual-wrapper">
                                 <img className="machine-banner-image" src={visualSrc} alt="" />
+                                {m.trial_eligible && (
+                                    <div className="machine-trial-badge">
+                                        <strong>FREE TRIAL</strong>
+                                        <span>{m.trial_daily_minutes || 15} phút/ngày</span>
+                                    </div>
+                                )}
 
                                 <div className="machine-floating-flag" title={country.name} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {country.flagUrl ? (
                                         <img
                                             src={country.flagUrl}
                                             alt={country.name}
-                                            style={{ width: '20px', height: '14px', objectFit: 'cover', borderRadius: '2px', display: 'inline-block', verticalAlign: 'middle', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+                                            style={{ inlineSize: '20px', blockSize: '14px', objectFit: 'cover', borderRadius: '2px', display: 'inline-block', verticalAlign: 'middle', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
                                         />
                                     ) : (
                                         <span className="flag-icon" style={{ display: 'inline-block', verticalAlign: 'middle' }}>{country.flag}</span>
@@ -405,7 +443,7 @@ function Machines({ ctx }) {
 
                                 <div className={`machine-floating-status ${isIdle ? 'idle' : 'busy'}`}>
                                     {isIdle && <span className="pulsing-dot" />}
-                                    <span>{isIdle ? 'Trống' : 'Bận'}</span>
+                                    <span>{isIdle ? 'Trống' : statusView.label}</span>
                                 </div>
                             </div>
 
@@ -432,22 +470,65 @@ function Machines({ ctx }) {
                                         <span className="ping-txt">({pingLabel})</span>
                                     </div>
                                 </div>
+                                <div className="machine-network-row">
+                                    <span className="network-label">PAYG</span>
+                                    <div className="ping-indicator-pill ping-mid" title={formatHourly(hourly)}>
+                                        <span className="ping-dot" />
+                                        <span className="ping-val">{formatRate(rate)}</span>
+                                        <span className="ping-txt">{`≈ ${formatHourly(hourly)}`}</span>
+                                    </div>
+                                </div>
+                                <div className="machine-network-row">
+                                    <span className="network-label">Giá gốc</span>
+                                    <div className="ping-indicator-pill ping-low" title={m.access_reason || ''}>
+                                        <span className="ping-dot" />
+                                        <span className="ping-val">{formatRate(standardRate)}</span>
+                                        <span className="ping-txt">
+                                            {discountPercent > 0 ? `-${discountPercent}%` : (m.membership_tier || m.billing_tier || 'free')}
+                                        </span>
+                                    </div>
+                                </div>
+                                {m.trial_eligible && (
+                                    <div className="machine-network-row">
+                                        <span className="network-label">Trial</span>
+                                        <div className="ping-indicator-pill ping-low">
+                                            <span className="ping-dot" />
+                                            <span className="ping-val">{hasTrialQuota ? `${trialRemaining} phút free` : 'Đã hết hôm nay'}</span>
+                                            <span className="ping-txt">({m.trial_daily_minutes || 15}p/ngày)</span>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="machine-network-row">
+                                    <span className="network-label">Ước tính</span>
+                                    <div className="ping-indicator-pill ping-low" title={m.access_reason || ''}>
+                                        <span className="ping-dot" />
+                                        <span className="ping-val">{Number.isFinite(Number(m.estimated_minutes)) ? `${m.estimated_minutes} phút` : '--'}</span>
+                                        <span className="ping-txt">(ví + trial)</span>
+                                    </div>
+                                </div>
+                                {m.access_reason && (
+                                    <p className="muted small" title={m.access_reason}>{m.access_reason}</p>
+                                )}
                             </div>
 
                             <div className="machine-card-actions">
                                 <button
                                     className="btn primary action-start"
-                                    onClick={() => handleStart(m.id)}
-                                    disabled={!isIdle}
+                                    onClick={() => {
+                                        if (needsTopup) {
+                                            ctx?.openTopup?.()
+                                            return
+                                        }
+                                        if (primaryActionIsResume) {
+                                            handleResume(m.id)
+                                            return
+                                        }
+                                        handleStart(m.id)
+                                    }}
+                                    disabled={startDisabled}
+                                    title={m.access_reason || ''}
                                 >
-                                    Khởi tạo máy này
-                                </button>
-                                <button
-                                    className="btn secondary action-resume"
-                                    onClick={() => handleResume(m.id)}
-                                    disabled={!isIdle}
-                                >
-                                    Tiếp tục snapshot
+                                    {startLabel}
                                 </button>
                                 <button className="btn ghost action-detail" onClick={() => handleDetail(m.id, visualSrc)}>
                                     Chi tiết
@@ -516,9 +597,9 @@ function Machines({ ctx }) {
                                             <em>{machine.region || machine.location || 'Global'}</em>
                                         </div>
                                         <div>
-                                            <span>Heartbeat</span>
-                                            <strong>{machine.last_heartbeat ? 'Online' : 'Chưa rõ'}</strong>
-                                            <em>{formatDateTime(machine.last_heartbeat)}</em>
+                                            <span>PAYG</span>
+                                            <strong>{formatRate(machine.play_rate_per_minute || machine.base_rate_per_minute || 0)}</strong>
+                                            <em>{machine.discount_percent ? `Giảm ${machine.discount_percent}%` : 'Standard'}</em>
                                         </div>
                                     </div>
 
@@ -607,9 +688,11 @@ function Machines({ ctx }) {
                                         <button className="btn primary" onClick={() => handleStart(machine.id)} disabled={!isIdle}>
                                             Khởi tạo máy này
                                         </button>
-                                        <button className="btn secondary" onClick={() => handleResume(machine.id)} disabled={!isIdle || !lastSession}>
-                                            Tiếp tục snapshot
-                                        </button>
+                                        {lastSession && (
+                                            <button className="btn secondary" onClick={() => handleResume(machine.id)} disabled={!isIdle}>
+                                                Tiếp tục snapshot
+                                            </button>
+                                        )}
                                         <button className="btn ghost" onClick={() => setDetailOpen(false)}>
                                             Đóng
                                         </button>

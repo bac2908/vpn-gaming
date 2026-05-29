@@ -22,6 +22,7 @@ import {
     downloadOvpn,
     getActiveSession,
     getMachine,
+    heartbeatSession,
     listMachines,
     markSunshinePaired,
     startMachine,
@@ -101,6 +102,9 @@ const formatPing = (machine) => {
     const ping = machine?.ping_ms ?? machine?.ping
     return Number.isFinite(Number(ping)) ? `${ping} ms` : 'Chưa đo'
 }
+
+const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN').format(Number(amount || 0)) + 'đ'
+const formatRate = (amount) => `${formatCurrency(amount)}/phút`
 
 const getMachineVisual = (machine, machines) => {
     if (machine?.image_url || machine?.image) return machine.image_url || machine.image
@@ -214,7 +218,7 @@ function Wizard({ ctx }) {
                     if (sessionData) localStorage.setItem('active_session', JSON.stringify(sessionData))
                 }
 
-                const machineListData = await listMachines({ page: 1, page_size: 20, sort: 'best' })
+                const machineListData = await listMachines({ page: 1, page_size: 20, sort: 'best' }, ctx?.token)
                 const items = machineListData.items || []
                 const resolvedMachineId = machineId || sessionData?.machine_id || items[0]?.id
 
@@ -261,14 +265,45 @@ function Wizard({ ctx }) {
     const currentStepIndex = moonlightReady ? 3 : vpnOnline ? 2 : isActiveSession ? 1 : machine ? 0 : -1
     const normalizeError = (err, fallback) => {
         const message = err?.message || fallback
+        const lower = message.toLowerCase()
+        if (lower.includes('so du')) return 'Số dư không đủ để chơi phút tiếp theo. Vui lòng nạp thêm tiền.'
+        if (lower.includes('membership')) return message
         if (message.toLowerCase().includes('goi dich vu')) {
-            return 'Bạn cần mua gói dịch vụ đang hoạt động trước khi khởi động cloud rig.'
+            return 'Membership chỉ là quyền lợi giảm giá; bạn vẫn có thể khởi động cloud rig bằng số dư ví.'
         }
         if (message.toLowerCase().includes('phien active')) {
             return 'Bạn đang có một phiên hoạt động. Hãy tiếp tục hoặc dừng phiên hiện tại trước.'
         }
         return message
     }
+
+    useEffect(() => {
+        if (!session?.id || !isActiveSession || !ctx?.token) return undefined
+
+        let cancelled = false
+        const tick = async () => {
+            try {
+                const updated = await heartbeatSession(
+                    session.id,
+                    { connection_state: 'connected', stream_active: true },
+                    ctx.token,
+                )
+                if (!cancelled) {
+                    setSession(updated)
+                    localStorage.setItem('active_session', JSON.stringify(updated))
+                }
+            } catch (err) {
+                console.warn('Session heartbeat failed', err)
+            }
+        }
+
+        tick()
+        const timer = window.setInterval(tick, 30000)
+        return () => {
+            cancelled = true
+            window.clearInterval(timer)
+        }
+    }, [session?.id, isActiveSession, ctx?.token])
 
     const handleBootSession = async () => {
         if (!machine?.id) {
@@ -283,7 +318,7 @@ function Wizard({ ctx }) {
             const started = await startMachine(machine.id, ctx?.token)
             setSession(started)
             localStorage.setItem('active_session', JSON.stringify(started))
-            setMachine((prev) => prev ? { ...prev, status: 'busy' } : prev)
+            setMachine((prev) => prev ? { ...prev, status: 'running' } : prev)
             setActionMessage('Cloud rig đã boot. Tải VPN profile và kết nối để lấy IP local.')
         } catch (err) {
             setError(normalizeError(err, 'Không thể khởi động cloud rig'))
@@ -403,7 +438,7 @@ function Wizard({ ctx }) {
             const stopped = await stopSession(session.id, ctx?.token)
             localStorage.removeItem('active_session')
             setSession(stopped)
-            setMachine((prev) => prev ? { ...prev, status: 'idle' } : prev)
+            setMachine((prev) => prev ? { ...prev, status: 'suspended', cooldown_until: stopped?.ended_at } : prev)
             setActionMessage('Đã dừng phiên. Máy đã được trả về trạng thái trống.')
         } catch (err) {
             setError(err.message || 'Không thể dừng phiên')
@@ -498,6 +533,8 @@ function Wizard({ ctx }) {
                         <div><span>Mã máy</span><strong>{machine?.code || 'Chưa chọn'}</strong></div>
                         <div><span>Khu vực</span><strong>{machine?.location || machine?.region || 'Chưa cấu hình'}</strong></div>
                         <div><span>Trạng thái máy</span><strong>{machine?.status || 'Chưa rõ'}</strong></div>
+                        <div><span>PAYG</span><strong>{formatRate(machine?.play_rate_per_minute || machine?.base_rate_per_minute || 0)}</strong></div>
+                        <div><span>Trial</span><strong>{machine?.trial_eligible ? `${machine?.trial_minutes_remaining || 0} phút còn lại` : 'Không áp dụng'}</strong></div>
                         <div><span>Session ID</span><strong>{session?.id ? session.id.slice(0, 8) : '--'}</strong></div>
                         <div><span>IP Local</span><strong>{session?.ip_address || '--'}</strong></div>
                         <div><span>Thời gian chạy</span><strong>{sessionDuration}</strong></div>

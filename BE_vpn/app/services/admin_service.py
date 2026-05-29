@@ -5,7 +5,9 @@ from uuid import UUID
 from fastapi import HTTPException, status
 
 from app import models, schemas
+from app.pricing import base_rate_for_gpu
 from app.repositories.admin_repository import AdminRepository
+from app.services.machine_service import MachineService
 
 
 class AdminService:
@@ -90,6 +92,8 @@ class AdminService:
             gpu=payload.gpu,
             status=payload.status or "idle",
             location=payload.location,
+            base_rate_per_minute=payload.base_rate_per_minute or base_rate_for_gpu(payload.gpu),
+            trial_eligible=bool(payload.trial_eligible),
         )
         self.repo.commit()
         self.repo.refresh(machine)
@@ -110,6 +114,10 @@ class AdminService:
             machine.status = payload.status
         if payload.location is not None:
             machine.location = payload.location
+        if payload.base_rate_per_minute is not None:
+            machine.base_rate_per_minute = payload.base_rate_per_minute
+        if payload.trial_eligible is not None:
+            machine.trial_eligible = payload.trial_eligible
 
         self.repo.commit()
         self.repo.refresh(machine)
@@ -185,31 +193,29 @@ class AdminService:
                     ip_address=item.ip_address,
                     bytes_up=item.bytes_up,
                     bytes_down=item.bytes_down,
+                    billing_tier=item.billing_tier,
+                    play_rate_per_minute=item.play_rate_per_minute or 0,
+                    charged_minutes=item.charged_minutes or 0,
+                    charged_amount=item.charged_amount or 0,
+                    free_minutes_used=item.free_minutes_used or 0,
+                    lifecycle_state=item.lifecycle_state or "running",
+                    billing_state=item.billing_state or "free",
+                    connection_state=item.connection_state or "connected",
+                    stop_reason=item.stop_reason,
+                    refunded_amount=item.refunded_amount or 0,
+                    refund_status=item.refund_status or "none",
                 )
             )
 
         return schemas.SessionsPage(items=result_items, total=total, page=page, page_size=page_size)
 
     def stop_session(self, session_id: UUID) -> schemas.MessageResponse:
-        session = self.repo.get_session_by_id(session_id)
-        if not session:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay session")
-
-        if session.status != "active":
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session khong dang active")
-
-        session.status = "stopped"
-        session.ended_at = datetime.utcnow()
-        self.repo.db.add(session)
-
-        if session.machine_id:
-            machine = self.repo.get_machine_by_id(session.machine_id)
-            if machine and machine.status == "busy":
-                machine.status = "idle"
-                self.repo.db.add(machine)
-
-        self.repo.commit()
+        MachineService(self.repo.db).stop_session_as_admin(session_id)
         return schemas.MessageResponse(message="Da dung session")
+
+    def fail_session(self, session_id: UUID, payload: schemas.AdminSessionFailRequest) -> schemas.MessageResponse:
+        MachineService(self.repo.db).fail_session_as_admin(session_id, payload.reason or "vm_failed")
+        return schemas.MessageResponse(message="Da danh dau session loi va xu ly refund neu du dieu kien")
 
     def export_transactions_csv(
         self,

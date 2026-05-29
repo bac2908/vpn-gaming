@@ -114,6 +114,17 @@ function History({ ctx }) {
         return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':')
     }
 
+    const getSessionSeconds = (session) => {
+        const value = Number(session?.duration_seconds)
+        if (Number.isFinite(value) && value > 0) return value
+        if (!session?.started_at) return 0
+        const start = new Date(session.started_at)
+        if (Number.isNaN(start.getTime())) return 0
+        const end = session.ended_at ? new Date(session.ended_at) : new Date()
+        if (Number.isNaN(end.getTime())) return 0
+        return Math.max(0, Math.floor((end - start) / 1000))
+    }
+
     const formatSessionDuration = (session) => {
         if (Number.isFinite(Number(session?.duration_seconds))) {
             return formatDurationSeconds(session.duration_seconds)
@@ -201,19 +212,65 @@ function History({ ctx }) {
     const [exportOpen, setExportOpen] = useState(false)
     const activeSessionsCount = sessionHistory.filter((session) => session.status === 'active' && !session.ended_at).length
     const resumableSessionsCount = sessionHistory.filter((session) => session.can_resume).length
-    const totalSessionSeconds = sessionHistory.reduce((sum, session) => {
-        const value = Number(session?.duration_seconds)
-        if (Number.isFinite(value) && value > 0) return sum + value
-        if (!session?.started_at) return sum
-        const start = new Date(session.started_at)
-        const end = session.ended_at ? new Date(session.ended_at) : new Date()
-        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return sum
-        return sum + Math.max(0, Math.floor((end - start) / 1000))
-    }, 0)
+    const totalSessionSeconds = sessionHistory.reduce((sum, session) => sum + getSessionSeconds(session), 0)
     const totalTopupAmount = topupHistory.reduce((sum, tx) => {
         const amount = Number(tx?.amount)
         return Number.isFinite(amount) ? sum + amount : sum
     }, 0)
+    const recentDays = Array.from({ length: 7 }, (_, idx) => {
+        const day = new Date()
+        day.setHours(0, 0, 0, 0)
+        day.setDate(day.getDate() - (6 - idx))
+        return day
+    })
+    const sessionBuckets = recentDays.map((day) => ({
+        date: day,
+        label: day.toLocaleDateString('vi-VN', { weekday: 'short' }),
+        seconds: 0,
+        count: 0,
+    }))
+    sessionHistory.forEach((session) => {
+        if (!session?.started_at) return
+        const started = new Date(session.started_at)
+        if (Number.isNaN(started.getTime())) return
+        const dayIndex = sessionBuckets.findIndex((bucket) =>
+            bucket.date.toDateString() === started.toDateString(),
+        )
+        if (dayIndex === -1) return
+        sessionBuckets[dayIndex].seconds += getSessionSeconds(session)
+        sessionBuckets[dayIndex].count += 1
+    })
+    const maxSessionSeconds = Math.max(1, ...sessionBuckets.map((bucket) => bucket.seconds))
+    const weekTotalSeconds = sessionBuckets.reduce((sum, bucket) => sum + bucket.seconds, 0)
+    const weekHours = Math.round((weekTotalSeconds / 3600) * 10) / 10
+    const timelineItems = [
+        ...sessionHistory.map((session) => ({
+            id: `session-${session.id}`,
+            type: 'session',
+            date: session.started_at || session.ended_at,
+            title: session?.machine?.gpu ? `🎮 ${session.machine.gpu} Gaming VM` : '🎮 Phiên chơi',
+            subtitle: getMachineLabel(session),
+            meta: `${formatDate(session.started_at)} → ${formatDate(session.ended_at)}`,
+            duration: formatSessionDuration(session),
+        })),
+        ...topupHistory.map((tx) => ({
+            id: `topup-${tx.id}`,
+            type: 'topup',
+            date: tx.created_at,
+            title: '💳 Nạp tiền',
+            subtitle: tx.description || 'Nạp vào ví',
+            meta: formatDate(tx.created_at),
+            amount: formatMoney(tx.amount),
+        })),
+    ]
+        .filter((item) => item.date)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+    const timelineGroups = timelineItems.reduce((groups, item) => {
+        const dateKey = new Date(item.date).toLocaleDateString('vi-VN')
+        if (!groups[dateKey]) groups[dateKey] = []
+        groups[dateKey].push(item)
+        return groups
+    }, {})
 
     return (
         <div className="stack history-page">
@@ -232,24 +289,96 @@ function History({ ctx }) {
 
             <div className="history-summary-grid">
                 <div className="history-summary-card">
-                    <span>Tổng phiên</span>
-                    <strong>{sessionTotal}</strong>
-                    <p>Phiên chơi đã ghi nhận</p>
+                    <div className="history-stat-icon">🎮</div>
+                    <div>
+                        <span>Tổng phiên</span>
+                        <strong>{sessionTotal}</strong>
+                        <p>Phiên chơi đã ghi nhận</p>
+                    </div>
                 </div>
                 <div className="history-summary-card">
-                    <span>Thời gian chơi</span>
-                    <strong>{formatDurationSeconds(totalSessionSeconds)}</strong>
-                    <p>Tính trên dữ liệu đang hiển thị</p>
+                    <div className="history-stat-icon">⏱</div>
+                    <div>
+                        <span>Thời gian chơi</span>
+                        <strong>{formatDurationSeconds(totalSessionSeconds)}</strong>
+                        <p>Dữ liệu trong lịch sử</p>
+                    </div>
                 </div>
                 <div className="history-summary-card">
-                    <span>Có thể tiếp tục</span>
-                    <strong>{resumableSessionsCount}</strong>
-                    <p>{activeSessionsCount} phiên đang chạy</p>
+                    <div className="history-stat-icon">🔄</div>
+                    <div>
+                        <span>Có thể tiếp tục</span>
+                        <strong>{resumableSessionsCount}</strong>
+                        <p>{activeSessionsCount} phiên đang chạy</p>
+                    </div>
                 </div>
                 <div className="history-summary-card">
-                    <span>Tổng nạp</span>
-                    <strong>{formatMoney(totalTopupAmount)}</strong>
-                    <p>Tính trên trang giao dịch hiện tại</p>
+                    <div className="history-stat-icon">💰</div>
+                    <div>
+                        <span>Tổng nạp</span>
+                        <strong>{formatMoney(totalTopupAmount)}</strong>
+                        <p>Giao dịch đã ghi nhận</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="history-insights">
+                <div className="card history-chart">
+                    <div className="card-header">
+                        <h3>7 ngày gần nhất</h3>
+                    </div>
+                    <div className="history-bars">
+                        {sessionBuckets.map((bucket) => (
+                            <div key={bucket.label} className="history-bar">
+                                <div
+                                    className="bar-fill"
+                                    style={{ height: `${Math.round((bucket.seconds / maxSessionSeconds) * 100)}%` }}
+                                />
+                                <span>{bucket.label}</span>
+                                <em>{Math.round(bucket.seconds / 60)}p</em>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="history-chart-meta">
+                        <div>
+                            <span>Tổng giờ chơi tuần này</span>
+                            <strong>{weekHours}h</strong>
+                        </div>
+                        <div>
+                            <span>Tổng nạp tuần này</span>
+                            <strong>{formatMoney(totalTopupAmount)}</strong>
+                        </div>
+                    </div>
+                </div>
+                <div className="card history-timeline">
+                    <div className="card-header">
+                        <h3>Timeline hoạt động</h3>
+                    </div>
+                    {timelineItems.length === 0 && (
+                        <div className="history-empty">Chưa có hoạt động gần đây.</div>
+                    )}
+                    {timelineItems.length > 0 && (
+                        <div className="timeline-list">
+                            {Object.entries(timelineGroups).map(([dateKey, items]) => (
+                                <div key={dateKey} className="timeline-group">
+                                    <div className="timeline-date">{dateKey}</div>
+                                    {items.map((item) => (
+                                        <div key={item.id} className="timeline-item">
+                                            <div>
+                                                <strong>{item.title}</strong>
+                                                <p className="muted">{item.subtitle}</p>
+                                            </div>
+                                            <div className="timeline-meta">
+                                                <span>{item.meta}</span>
+                                                {item.duration && <strong>{item.duration}</strong>}
+                                                {item.amount && <strong>+{item.amount}</strong>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -318,10 +447,12 @@ function History({ ctx }) {
                     {sessionActionError && <div className="alert error">{sessionActionError}</div>}
 
                     {!sessionLoading && !sessionError && sessionHistory.length === 0 && (
-                        <div className="empty-state">
+                        <div className="empty-state compact">
                             <div className="empty-icon">🎮</div>
-                            <h3>Chưa có phiên chơi nào</h3>
-                            <p className="muted">Bắt đầu phiên chơi đầu tiên để xem lịch sử tại đây</p>
+                            <div>
+                                <h3>Chưa có phiên chơi nào</h3>
+                                <p className="muted">Bắt đầu phiên chơi đầu tiên để xem lịch sử tại đây.</p>
+                            </div>
                             <a className="btn primary" href="/app/machines">Bắt đầu ngay</a>
                         </div>
                     )}
@@ -491,17 +622,15 @@ function History({ ctx }) {
             )}
 
             {/* Info Card */}
-            <div className="card info-card history-storage-card">
-                <div className="info-header">
-                    <h4>Chính sách lưu trữ</h4>
-                </div>
+            <details className="history-policy">
+                <summary>Chính sách lưu trữ</summary>
                 <ul className="info-list">
                     <li>Lưu snapshot phiên gần nhất kèm timestamp để resume.</li>
                     <li>Xoá snapshot cũ theo quota; luôn ưu tiên golden image fallback.</li>
                     <li>Log hoạt động tối giản, ẩn thông tin nhạy cảm khỏi UI.</li>
                     <li>Lịch sử giao dịch được lưu trữ vĩnh viễn để tra cứu.</li>
                 </ul>
-            </div>
+            </details>
 
             {/* Export Report Modal */}
             <ExportReportModal

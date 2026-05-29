@@ -7,6 +7,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.pricing import SAMPLE_HIGH_END_RATE_PER_MINUTE, discounted_rate, get_plan_policy
 
 
 class SubscriptionService:
@@ -14,12 +15,15 @@ class SubscriptionService:
         self.db = db
 
     def list_plans(self) -> list[models.ServicePlan]:
-        return (
+        plans = (
             self.db.query(models.ServicePlan)
             .filter(models.ServicePlan.active.is_(True))
             .order_by(models.ServicePlan.price_cents.asc(), models.ServicePlan.duration_days.asc())
             .all()
         )
+        for plan in plans:
+            self._attach_plan_policy(plan)
+        return plans
 
     def get_active_subscription(self, current_user: models.User) -> models.Subscription | None:
         now = datetime.utcnow()
@@ -33,6 +37,8 @@ class SubscriptionService:
             .order_by(models.Subscription.created_at.desc())
             .first()
         )
+        if subscription and subscription.plan:
+            self._attach_plan_policy(subscription.plan)
         return subscription
 
     def purchase_plan(self, payload: schemas.SubscriptionPurchaseRequest, current_user: models.User) -> models.Subscription:
@@ -90,4 +96,27 @@ class SubscriptionService:
         self.db.add(payment)
         self.db.commit()
         self.db.refresh(subscription)
+        if subscription.plan:
+            self._attach_plan_policy(subscription.plan)
         return subscription
+
+    def _attach_plan_policy(self, plan: models.ServicePlan) -> None:
+        policy = get_plan_policy(plan.code)
+        plan.play_rate_per_minute = policy.play_rate_per_minute
+        plan.hourly_estimate = policy.hourly_estimate
+        plan.discount_percent = policy.discount_percent
+        plan.standard_sample_rate_per_minute = SAMPLE_HIGH_END_RATE_PER_MINUTE
+        plan.member_sample_rate_per_minute = discounted_rate(SAMPLE_HIGH_END_RATE_PER_MINUTE, policy)
+        plan.allowed_gpu_tier = policy.allowed_gpu_tier
+        plan.allowed_regions = policy.allowed_regions
+        plan.snapshot_policy = policy.snapshot_policy
+        plan.snapshot_active_limit = policy.snapshot_active_limit
+        plan.queue_policy = policy.queue_policy
+        plan.queue_priority = policy.queue_priority
+        plan.max_session_seconds = policy.max_session_seconds
+        plan.grace_period_seconds = policy.grace_period_seconds
+        plan.idle_warning_seconds = policy.idle_warning_seconds
+        plan.idle_stop_seconds = policy.idle_stop_seconds
+        plan.cooldown_seconds = policy.cooldown_seconds
+        plan.max_concurrent_sessions = policy.max_concurrent_sessions
+        plan.daily_cap_vnd = policy.daily_cap_vnd

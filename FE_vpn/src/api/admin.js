@@ -69,6 +69,10 @@ export async function stopSession(sessionId, token) {
     return request(`/admin/sessions/${sessionId}/stop`, { method: 'POST', token })
 }
 
+export async function failSession(sessionId, payload, token) {
+    return request(`/admin/sessions/${sessionId}/fail`, { method: 'POST', body: payload, token })
+}
+
 // ===== Transaction/Revenue APIs =====
 export async function adminListTopupTransactions(params, token) {
     const query = buildQuery(params)

@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_optional_current_user
 from app.database import get_db
 from app.services.machine_service import MachineService
 
@@ -28,6 +28,7 @@ def list_machines(
     min_ping: int | None = Query(None, ge=0),
     max_ping: int | None = Query(None, ge=0),
     sort: str = Query("best", pattern="^(best|ping)$"),
+    current_user: models.User | None = Depends(get_optional_current_user),
     machine_service: MachineService = Depends(get_machine_service),
 ):
     return machine_service.list_machines(
@@ -39,6 +40,7 @@ def list_machines(
         min_ping=min_ping,
         max_ping=max_ping,
         sort=sort,
+        current_user=current_user,
     )
 
 
@@ -81,6 +83,16 @@ def stop_user_session(
     machine_service: MachineService = Depends(get_machine_service),
 ):
     return machine_service.stop_user_session(session_id, current_user)
+
+
+@router.post("/sessions/{session_id}/heartbeat", response_model=schemas.SessionOut)
+def heartbeat_session(
+    session_id: UUID,
+    payload: schemas.SessionHeartbeatRequest,
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    return machine_service.record_session_heartbeat(session_id, current_user, payload)
 
 
 @router.get("/sessions/{session_id}/ovpn")

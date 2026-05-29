@@ -1,6 +1,7 @@
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -63,6 +64,22 @@ class MachineRepository:
         items = query.offset((page - 1) * page_size).limit(page_size).all()
         return items, total
 
+    def release_expired_machine_cooldowns(self, now: datetime) -> int:
+        machines = (
+            self.db.query(models.Machine)
+            .filter(
+                models.Machine.status == "suspended",
+                models.Machine.cooldown_until.is_not(None),
+                models.Machine.cooldown_until <= now,
+            )
+            .all()
+        )
+        for machine in machines:
+            machine.status = "idle"
+            machine.cooldown_until = None
+            self.db.add(machine)
+        return len(machines)
+
     def get_machine_by_id(self, machine_id: UUID) -> models.Machine | None:
         return self.db.query(models.Machine).filter(models.Machine.id == machine_id).first()
 
@@ -92,6 +109,18 @@ class MachineRepository:
 
     def get_session_by_id(self, session_id: UUID) -> models.VpnSession | None:
         return self.db.query(models.VpnSession).filter(models.VpnSession.id == session_id).first()
+
+    def list_active_billable_sessions(self) -> list[models.VpnSession]:
+        return (
+            self.db.query(models.VpnSession)
+            .filter(
+                models.VpnSession.status == "active",
+                models.VpnSession.ended_at.is_(None),
+                models.VpnSession.billing_tier.is_not(None),
+                models.VpnSession.billing_started_at.is_not(None),
+            )
+            .all()
+        )
 
     def list_user_sessions(
         self,
@@ -147,6 +176,7 @@ class MachineRepository:
                 models.VpnSession.user_id == user_id,
                 models.VpnSession.machine_id.in_(machine_ids),
                 models.VpnSession.ended_at.is_not(None),
+                models.VpnSession.snapshot_retained.is_(True),
             )
             .group_by(models.VpnSession.machine_id)
             .subquery()
@@ -189,9 +219,92 @@ class MachineRepository:
                 models.VpnSession.machine_id == machine_id,
                 models.VpnSession.user_id == user_id,
                 models.VpnSession.ended_at.is_not(None),
+                models.VpnSession.snapshot_retained.is_(True),
             )
             .order_by(models.VpnSession.ended_at.desc())
             .first()
+        )
+
+    def count_active_sessions_for_user(self, user_id: UUID) -> int:
+        return (
+            self.db.query(models.VpnSession)
+            .filter(
+                models.VpnSession.user_id == user_id,
+                models.VpnSession.status == "active",
+                models.VpnSession.ended_at.is_(None),
+            )
+            .count()
+        )
+
+    def get_active_subscription_for_user(self, user_id: UUID) -> models.Subscription | None:
+        now = datetime.utcnow()
+        return (
+            self.db.query(models.Subscription)
+            .filter(
+                models.Subscription.user_id == user_id,
+                models.Subscription.status == "active",
+                or_(models.Subscription.end_at.is_(None), models.Subscription.end_at > now),
+            )
+            .order_by(models.Subscription.created_at.desc())
+            .first()
+        )
+
+    def get_daily_billing_totals(self, user_id: UUID, billing_day: date) -> tuple[int, int]:
+        net_amount = func.sum(
+            case(
+                (models.SessionBillingEvent.event_type == "refund", -models.SessionBillingEvent.amount),
+                else_=models.SessionBillingEvent.amount,
+            )
+        )
+        amount, free_minutes = (
+            self.db.query(
+                func.coalesce(net_amount, 0),
+                func.coalesce(func.sum(models.SessionBillingEvent.free_minutes), 0),
+            )
+            .filter(
+                models.SessionBillingEvent.user_id == user_id,
+                models.SessionBillingEvent.billing_day == billing_day,
+            )
+            .one()
+        )
+        return int(amount or 0), int(free_minutes or 0)
+
+    def add_billing_event(
+        self,
+        user_id: UUID,
+        session_id: UUID | None,
+        machine_id: UUID | None,
+        billing_day: date,
+        tier: str,
+        charged_minutes: int,
+        free_minutes: int,
+        amount: int,
+        event_type: str = "charge",
+    ) -> models.SessionBillingEvent:
+        event = models.SessionBillingEvent(
+            user_id=user_id,
+            session_id=session_id,
+            machine_id=machine_id,
+            billing_day=billing_day,
+            tier=tier,
+            charged_minutes=charged_minutes,
+            free_minutes=free_minutes,
+            amount=amount,
+            event_type=event_type,
+        )
+        self.db.add(event)
+        return event
+
+    def list_retained_snapshots_for_user(self, user_id: UUID) -> list[models.VpnSession]:
+        return (
+            self.db.query(models.VpnSession)
+            .filter(
+                models.VpnSession.user_id == user_id,
+                models.VpnSession.snapshot_retained.is_(True),
+                models.VpnSession.ended_at.is_not(None),
+            )
+            .order_by(models.VpnSession.ended_at.desc(), models.VpnSession.started_at.desc())
+            .all()
         )
 
     def create_active_session(
@@ -199,12 +312,45 @@ class MachineRepository:
         user_id: UUID,
         machine_id: UUID,
         subscription_id: UUID | None = None,
+        billing_tier: str | None = None,
+        play_rate_per_minute: int = 0,
+        billing_started_at=None,
+        lifecycle_state: str = "running",
+        billing_state: str = "free",
+        max_session_seconds: int = 0,
+        grace_period_seconds: int = 300,
+        idle_warning_seconds: int = 600,
+        idle_stop_seconds: int = 900,
+        cooldown_seconds: int = 60,
+        queue_priority: int = 0,
+        max_concurrent_sessions: int = 1,
+        snapshot_active_limit: int = 0,
+        trial_eligible: bool = False,
     ) -> models.VpnSession:
         session = models.VpnSession(
             user_id=user_id,
             machine_id=machine_id,
             subscription_id=subscription_id,
             status="active",
+            billing_tier=billing_tier,
+            play_rate_per_minute=play_rate_per_minute,
+            billing_started_at=billing_started_at,
+            last_billed_at=billing_started_at,
+            lifecycle_state=lifecycle_state,
+            billing_state=billing_state,
+            connection_state="connected",
+            last_client_heartbeat_at=billing_started_at,
+            last_stream_activity_at=billing_started_at,
+            max_session_seconds=max_session_seconds,
+            grace_period_seconds=grace_period_seconds,
+            idle_warning_seconds=idle_warning_seconds,
+            idle_stop_seconds=idle_stop_seconds,
+            cooldown_seconds=cooldown_seconds,
+            queue_priority=queue_priority,
+            max_concurrent_sessions=max_concurrent_sessions,
+            snapshot_active_limit=snapshot_active_limit,
+            trial_eligible=trial_eligible,
+            snapshot_retained=False,
         )
         self.db.add(session)
         return session

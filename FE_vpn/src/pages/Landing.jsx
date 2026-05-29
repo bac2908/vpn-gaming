@@ -1,6 +1,6 @@
 import './landing.css'
 import { NavLink } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { listMachines } from '../api/machines'
 import { listPlans } from '../api/subscriptions'
 import { buildLoginRedirect, buildRegisterRedirect } from '../utils/redirect'
@@ -11,8 +11,8 @@ const getCountryData = (region) => {
         return { flag: '🇸🇬', code: 'sg', name: 'Singapore', flagUrl: 'https://flagcdn.com/sg.svg' }
     }
     if (
-        r.includes('vietnam') || r.includes('việt nam') || r.includes('vn') || 
-        r.includes('hanoi') || r.includes('hà nội') || r.includes('hcmc') || 
+        r.includes('vietnam') || r.includes('việt nam') || r.includes('vn') ||
+        r.includes('hanoi') || r.includes('hà nội') || r.includes('hcmc') ||
         r.includes('hồ chí minh') || r.includes('ho chi minh') || r.includes('saigon') || r.includes('sài gòn')
     ) {
         return { flag: '🇻🇳', code: 'vn', name: 'Việt Nam', flagUrl: 'https://flagcdn.com/vn.svg' }
@@ -49,10 +49,143 @@ const steps = [
 ]
 
 const formatVnd = (amount) => new Intl.NumberFormat('vi-VN').format(amount) + 'đ'
+const formatRate = (amount) => `${formatVnd(amount)}/phút`
 
 const formatQuota = (plan) => {
     if (plan?.data_limit_gb == null) return 'Không giới hạn'
     return `${plan.data_limit_gb}GB băng thông`
+}
+
+const PLAN_CONTENT = {
+    basic: {
+        displayName: 'BASIC',
+        badge: 'BASIC',
+        tagline: 'Dành cho người mới bắt đầu trải nghiệm cloud gaming với chi phí thấp.',
+        suitableFor: ['Sinh viên', 'Casual gamer', 'Người mới dùng hệ thống'],
+        benefits: [
+            { label: 'Giảm giá chơi', value: '~15-20%' },
+            { label: 'Snapshot', value: '2 snapshot' },
+            { label: 'Queue Priority', value: 'Cấp 1' },
+            { label: 'VPN Gaming', value: 'Standard' },
+            { label: 'Resume Session', value: 'Có' },
+            { label: 'Region', value: 'VN' },
+            { label: 'Hỗ trợ', value: 'Thường' },
+        ],
+        rates: [
+            { gpu: 'RTX 3070', price: 65 },
+            { gpu: 'RTX 3080', price: 85 },
+            { gpu: 'RTX 4080', price: 120 },
+            { gpu: 'T4', price: 45 },
+        ],
+        price: 59000,
+        featured: false,
+    },
+    pro: {
+        displayName: 'PRO',
+        badge: 'PRO',
+        tagline: 'Lựa chọn tốt nhất cho đa số game thủ với mức giá hợp lý và hiệu năng tối ưu.',
+        suitableFor: ['Game thủ chơi thường xuyên', 'Đa số người dùng'],
+        benefits: [
+            { label: 'Giảm giá chơi', value: '~30-35%' },
+            { label: 'Snapshot', value: '5 snapshot' },
+            { label: 'Queue Priority', value: 'Cấp 2' },
+            { label: 'VPN Gaming', value: 'Advanced' },
+            { label: 'Resume nhanh', value: 'Có' },
+            { label: 'Region', value: 'VN + SG' },
+            { label: 'Session Max', value: '8 giờ' },
+            { label: 'Smart Routing', value: 'Có' },
+            { label: 'Hỗ trợ', value: 'Ưu tiên' },
+        ],
+        rates: [
+            { gpu: 'RTX 3070', price: 55 },
+            { gpu: 'RTX 3080', price: 75 },
+            { gpu: 'RTX 4080', price: 100 },
+            { gpu: 'T4', price: 40 },
+        ],
+        price: 119000,
+        featured: true,
+        featuredLabel: 'Khuyên dùng',
+    },
+    premium: {
+        displayName: 'PREMIUM',
+        badge: 'PREMIUM',
+        tagline: 'Trải nghiệm cloud gaming cao cấp với ưu tiên cao nhất và kết nối nhanh nhất.',
+        suitableFor: ['Hardcore gamer', 'Người muốn ping tốt nhất'],
+        benefits: [
+            { label: 'Giảm giá chơi', value: '~45-50%' },
+            { label: 'Snapshot', value: '20 snapshot' },
+            { label: 'Queue Priority', value: 'Cao nhất' },
+            { label: 'VPN Gaming', value: 'Fastest Route' },
+            { label: 'Resume cực nhanh', value: 'Có' },
+            { label: 'Region', value: 'Global' },
+            { label: 'Session Max', value: '24 giờ' },
+            { label: 'Smart Routing', value: 'Có' },
+            { label: 'VIP Support', value: 'Có' },
+            { label: 'Daily Cap', value: 'Tùy chỉnh' },
+        ],
+        rates: [
+            { gpu: 'RTX 3070', price: 45 },
+            { gpu: 'RTX 3080', price: 65 },
+            { gpu: 'RTX 4080', price: 85 },
+            { gpu: 'T4', price: 35 },
+        ],
+        price: 249000,
+        featured: false,
+    },
+}
+
+const PAYG_INFO = {
+    title: 'Free / PAYG',
+    subtitle: 'Không phải gói dịch vụ',
+    description: 'Người mới nhận 15 phút miễn phí mỗi ngày trên máy Trial, sau đó tính tiền theo phút.',
+    highlights: ['15 phút miễn phí/ngày', 'Chơi máy Trial', 'PAYG tính theo phút'],
+    rates: [
+        { gpu: 'RTX 3070', price: 80 },
+        { gpu: 'RTX 3080', price: 100 },
+        { gpu: 'RTX 4080', price: 140 },
+        { gpu: 'T4', price: 50 },
+    ],
+}
+
+const PLAN_ORDER = ['basic', 'pro', 'premium']
+
+const getPlanKey = (plan = {}) => {
+    const raw = `${plan.code || ''} ${plan.name || ''}`.toLowerCase()
+    if (raw.includes('basic')) return 'basic'
+    if (raw.includes('pro')) return 'pro'
+    if (raw.includes('premium')) return 'premium'
+    return 'generic'
+}
+
+const getPlanWeight = (plan) => {
+    const idx = PLAN_ORDER.indexOf(getPlanKey(plan))
+    return idx === -1 ? 99 : idx
+}
+
+const getPlanView = (plan = {}) => {
+    const key = getPlanKey(plan)
+    const content = PLAN_CONTENT[key]
+    if (content) {
+        return {
+            ...content,
+            displayName: content.displayName,
+            price: content.price,
+        }
+    }
+
+    return {
+        displayName: plan.name || 'Gói dịch vụ',
+        badge: plan.active ? 'Đang mở bán' : 'Tạm ẩn',
+        tagline: plan.description || 'Thông tin gói được lấy từ hệ thống.',
+        suitableFor: [],
+        benefits: [
+            { label: 'Thời hạn', value: plan.duration_days ? `${plan.duration_days} ngày` : 'Chưa cấu hình' },
+            { label: 'Dung lượng', value: formatQuota(plan) },
+            { label: 'Mã gói', value: plan.code || 'Chưa có mã' },
+        ],
+        rates: [],
+        featured: false,
+    }
 }
 
 const protectedLinks = {
@@ -117,6 +250,10 @@ function Landing({ ctx }) {
     const featuredMachine = topThree[0] || machines[0]
     const featuredCountry = getCountryData(featuredMachine?.region || featuredMachine?.location)
     const featuredPing = featuredMachine?.ping_ms ?? featuredMachine?.ping
+    const orderedPlans = useMemo(
+        () => [...plans].sort((a, b) => getPlanWeight(a) - getPlanWeight(b)),
+        [plans],
+    )
     const handleAuthEntry = () => {
         ctx?.clearAuth?.()
     }
@@ -160,85 +297,85 @@ function Landing({ ctx }) {
                     </div>
                 </div>
                 <div className="hero-panel">
-                <div className="landing-machine-preview">
-                    <div className="landing-preview-visual">
-                        <img src={HERO_MACHINE_IMAGES[0]} alt="Cloud gaming GPU" />
-                        <div className="landing-preview-overlay">
-                            <span className="badge success">Máy đề xuất</span>
-                            <div>
-                                <p>{featuredCountry.name}</p>
-                                <h2>{featuredMachine?.gpu || 'RTX cloud rig'}</h2>
-                                <span>{featuredMachine?.code || 'Chọn máy sau khi đăng nhập'}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="landing-machine-head">
-                        <div>
-                            <p className="muted">{idle.length} máy sẵn sàng</p>
-                            <h3>3 máy ping thấp nhất</h3>
-                        </div>
-                        <strong>{Number.isFinite(Number(featuredPing)) ? `${featuredPing} ms` : 'Đang đo'}</strong>
-                    </div>
-                    <div className="landing-machine-list">
-                        {loading && <p className="muted">Đang tải danh sách máy...</p>}
-                        {!loading && !topThree.length && (
-                            <div className="landing-empty">
-                                <p className="muted">Chưa có máy nào từ hệ thống.</p>
-                            </div>
-                        )}
-                        {!loading && topThree.map((m) => {
-                            const country = getCountryData(m.region || m.location)
-                            const isIdle = m.status === 'idle'
-                            const ping = m.ping_ms ?? m.ping ?? 0
-                            
-                            let pingClass = 'ping-high'
-                            let pingLabel = 'Chậm'
-                            if (ping > 0 && ping < 30) {
-                                pingClass = 'ping-low'
-                                pingLabel = 'Cực nhanh'
-                            } else if (ping >= 30 && ping <= 80) {
-                                pingClass = 'ping-mid'
-                                pingLabel = 'Khá tốt'
-                            }
-                            
-                            return (
-                                <div key={m.id} className="machine-compact-row">
-                                    <div className="machine-row-main">
-                                        {country.flagUrl ? (
-                                            <img 
-                                                src={country.flagUrl} 
-                                                alt={country.name} 
-                                            />
-                                        ) : (
-                                            <span>{country.flag}</span>
-                                        )}
-                                        <div>
-                                            <strong>{m.location || m.name || country.name}</strong>
-                                            <p>
-                                                <span className={`state-dot ${isIdle ? 'idle' : 'busy'}`} />
-                                                {m.code} · {isIdle ? 'Trống' : 'Bận'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="machine-row-meta">
-                                        <span>{m.gpu || 'GPU cloud'}</span>
-                                        <div className={`ping-indicator-pill ${pingClass}`}>
-                                            <span className="ping-dot" />
-                                            <span className="ping-val">{pingLabel}</span>
-                                        </div>
-                                    </div>
-                                    <NavLink
-                                        className="btn primary"
-                                        to={buildLoginRedirect(`/app/wizard?machineId=${m.id}`)}
-                                        onClick={handleAuthEntry}
-                                    >
-                                        Chạy
-                                    </NavLink>
+                    <div className="landing-machine-preview">
+                        <div className="landing-preview-visual">
+                            <img src={HERO_MACHINE_IMAGES[0]} alt="Cloud gaming GPU" />
+                            <div className="landing-preview-overlay">
+                                <span className="badge success">Máy đề xuất</span>
+                                <div>
+                                    <p>{featuredCountry.name}</p>
+                                    <h2>{featuredMachine?.gpu || 'RTX cloud rig'}</h2>
+                                    <span>{featuredMachine?.code || 'Chọn máy sau khi đăng nhập'}</span>
                                 </div>
-                            )
-                        })}
+                            </div>
+                        </div>
+                        <div className="landing-machine-head">
+                            <div>
+                                <p className="muted">{idle.length} máy sẵn sàng</p>
+                                <h3>3 máy ping thấp nhất</h3>
+                            </div>
+                            <strong>{Number.isFinite(Number(featuredPing)) ? `${featuredPing} ms` : 'Đang đo'}</strong>
+                        </div>
+                        <div className="landing-machine-list">
+                            {loading && <p className="muted">Đang tải danh sách máy...</p>}
+                            {!loading && !topThree.length && (
+                                <div className="landing-empty">
+                                    <p className="muted">Chưa có máy nào từ hệ thống.</p>
+                                </div>
+                            )}
+                            {!loading && topThree.map((m) => {
+                                const country = getCountryData(m.region || m.location)
+                                const isIdle = m.status === 'idle'
+                                const ping = m.ping_ms ?? m.ping ?? 0
+
+                                let pingClass = 'ping-high'
+                                let pingLabel = 'Chậm'
+                                if (ping > 0 && ping < 30) {
+                                    pingClass = 'ping-low'
+                                    pingLabel = 'Cực nhanh'
+                                } else if (ping >= 30 && ping <= 80) {
+                                    pingClass = 'ping-mid'
+                                    pingLabel = 'Khá tốt'
+                                }
+
+                                return (
+                                    <div key={m.id} className="machine-compact-row">
+                                        <div className="machine-row-main">
+                                            {country.flagUrl ? (
+                                                <img
+                                                    src={country.flagUrl}
+                                                    alt={country.name}
+                                                />
+                                            ) : (
+                                                <span>{country.flag}</span>
+                                            )}
+                                            <div>
+                                                <strong>{m.location || m.name || country.name}</strong>
+                                                <p>
+                                                    <span className={`state-dot ${isIdle ? 'idle' : 'busy'}`} />
+                                                    {m.code} · {isIdle ? 'Trống' : 'Bận'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="machine-row-meta">
+                                            <span>{m.gpu || 'GPU cloud'}</span>
+                                            <div className={`ping-indicator-pill ${pingClass}`}>
+                                                <span className="ping-dot" />
+                                                <span className="ping-val">{pingLabel}</span>
+                                            </div>
+                                        </div>
+                                        <NavLink
+                                            className="btn primary"
+                                            to={buildLoginRedirect(`/app/wizard?machineId=${m.id}`)}
+                                            onClick={handleAuthEntry}
+                                        >
+                                            Chạy
+                                        </NavLink>
+                                    </div>
+                                )
+                            })}
+                        </div>
                     </div>
-                </div>
                 </div>
             </section>
 
@@ -268,7 +405,8 @@ function Landing({ ctx }) {
                         <p className="muted">Bảng giá VND</p>
                         <h2>Chọn gói cloud gaming phù hợp</h2>
                         <p className="muted small pricing-note">
-                            Giá hiển thị bằng VND, trừ trực tiếp từ số dư tài khoản sau khi đăng nhập.
+                            Giá hiển thị bằng VND, trừ trực tiếp từ số dư tài khoản sau khi đăng nhập. User mới có 15
+                            phút miễn phí/ngày trên máy Trial.
                         </p>
                     </div>
                     <NavLink className="btn ghost" to={buildRegisterRedirect(protectedLinks.plans)} onClick={handleAuthEntry}>
@@ -278,40 +416,53 @@ function Landing({ ctx }) {
                 <div className="plan-grid">
                     {plansLoading && <p className="muted">Đang tải bảng giá...</p>}
                     {!plansLoading && !plans.length && <p className="muted">Chưa có gói dịch vụ từ hệ thống.</p>}
-                    {!plansLoading && plans.map((plan, index) => (
-                        <div key={plan.id || plan.code} className={`card plan ${index === 0 ? 'featured' : ''}`}>
-                            <div className="plan-top">
-                                <div>
-                                    <span className="plan-badge">{plan.active ? 'Đang mở bán' : 'Tạm ẩn'}</span>
-                                    <h3>{plan.name}</h3>
+                    {!plansLoading && orderedPlans.map((plan) => {
+                        const view = getPlanView(plan)
+                        const badgeLabel = plan.active ? view.badge : 'Tạm ẩn'
+                        const price = view.price ?? plan.price_cents ?? plan.price ?? 0
+                        return (
+                            <div key={plan.id || plan.code} className={`card plan ${view.featured ? 'featured' : ''}`}>
+                                <div className="plan-top">
+                                    <div>
+                                        <span className="plan-badge">{badgeLabel}</span>
+                                        <h3>{view.displayName}</h3>
+                                    </div>
+                                    {view.featured && <span className="pill">{view.featuredLabel || 'Khuyên dùng'}</span>}
                                 </div>
-                                {index === 0 && <span className="pill">Gói đầu tiên</span>}
-                            </div>
-                            <div className="plan-price">
-                                <strong>{formatVnd(plan.price_cents ?? plan.price ?? 0)}</strong>
-                                <span>/ gói</span>
-                            </div>
-                            <p className="muted small plan-summary">{plan.description || 'Thông tin gói được lấy từ hệ thống.'}</p>
-                            <div className="plan-metrics">
-                                <div>
-                                    <span>Thời hạn</span>
-                                    <strong>{plan.duration_days ? `${plan.duration_days} ngày` : 'Chưa cấu hình'}</strong>
+                                <div className="plan-price">
+                                    <strong>{formatVnd(price)}</strong>
+                                    <span>/ tháng</span>
                                 </div>
-                                <div>
-                                    <span>Dung lượng</span>
-                                    <strong>{formatQuota(plan)}</strong>
-                                </div>
+                                <p className="muted small plan-tagline">{view.tagline}</p>
+                                {view.suitableFor?.length > 0 && (
+                                    <div className="plan-section">
+                                        <div className="plan-section-title">Phù hợp</div>
+                                        <div className="plan-chip-list">
+                                            {view.suitableFor.map((item) => (
+                                                <span key={item} className="plan-chip">{item}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {view.benefits?.length > 0 && (
+                                    <div className="plan-section">
+                                        <div className="plan-section-title">Quyền lợi</div>
+                                        <div className="plan-benefit-grid">
+                                            {view.benefits.map((benefit) => (
+                                                <div key={benefit.label} className="plan-benefit">
+                                                    <span>{benefit.label}</span>
+                                                    <strong>{benefit.value}</strong>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <NavLink className="btn secondary" to={buildRegisterRedirect(protectedLinks.plans)} onClick={handleAuthEntry}>
+                                    Chọn gói
+                                </NavLink>
                             </div>
-                            <ul className="plan-features">
-                                <li>Mã gói: {plan.code || 'Chưa có mã'}</li>
-                                <li>Tiền tệ: {plan.currency || 'VND'}</li>
-                                <li>Trạng thái: {plan.active ? 'Đang hoạt động' : 'Không hoạt động'}</li>
-                            </ul>
-                            <NavLink className="btn secondary" to={buildRegisterRedirect(protectedLinks.plans)} onClick={handleAuthEntry}>
-                                Chọn gói
-                            </NavLink>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             </section>
 

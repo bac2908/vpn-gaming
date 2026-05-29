@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 import sys
 from time import perf_counter
 
@@ -27,6 +28,7 @@ from app.api.payments import router as payments_router
 from app.api.admin import router as admin_router
 from app.api.subscriptions import router as subscriptions_router
 from app import security
+from app.services.machine_service import MachineService
 
 settings = get_settings()
 configure_logging(level=settings.log_level, use_json=settings.log_json)
@@ -52,7 +54,7 @@ def seed_default_data():
                     code="basic",
                     name="Gói Cơ Bản",
                     description="Phù hợp cho người dùng cá nhân",
-                    price_cents=50000,
+                    price_cents=49000,
                     currency="VND",
                     duration_days=30,
                     data_limit_gb=50,
@@ -62,7 +64,7 @@ def seed_default_data():
                     code="pro",
                     name="Gói Pro",
                     description="Dành cho game thủ chuyên nghiệp",
-                    price_cents=100000,
+                    price_cents=99000,
                     currency="VND",
                     duration_days=30,
                     data_limit_gb=100,
@@ -72,7 +74,7 @@ def seed_default_data():
                     code="premium",
                     name="Gói Premium",
                     description="Không giới hạn dung lượng",
-                    price_cents=200000,
+                    price_cents=199000,
                     currency="VND",
                     duration_days=30,
                     data_limit_gb=None,
@@ -108,6 +110,14 @@ def seed_default_data():
         existing_machines = db.query(models.Machine).first()
         if not existing_machines:
             default_machines = [
+                models.Machine(
+                    code="VN-HCM-3060",
+                    region="Vietnam",
+                    location="Ho Chi Minh City",
+                    ping_ms=6,
+                    gpu="NVIDIA RTX 3060",
+                    status="idle",
+                ),
                 models.Machine(
                     code="VN-HCM-01",
                     region="Vietnam",
@@ -156,6 +166,33 @@ def seed_default_data():
 seed_default_data()
 
 app = FastAPI(title="VPN Gaming Auth API")
+
+
+async def billing_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        db = SessionLocal()
+        try:
+            changed = MachineService(db).bill_all_active_sessions()
+            if changed:
+                logger.info("Billed active sessions: %d", changed)
+        except Exception as exc:
+            db.rollback()
+            logger.exception("Billing loop failed: %s", exc)
+        finally:
+            db.close()
+
+
+@app.on_event("startup")
+async def start_billing_loop() -> None:
+    app.state.billing_task = asyncio.create_task(billing_loop())
+
+
+@app.on_event("shutdown")
+async def stop_billing_loop() -> None:
+    task = getattr(app.state, "billing_task", None)
+    if task:
+        task.cancel()
 
 # Load settings for CORS configuration
 cors_settings = settings

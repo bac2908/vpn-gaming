@@ -250,7 +250,7 @@ function Dashboard({ ctx }) {
 
         async function load() {
             const [machineResult, sessionResult, subscriptionResult] = await Promise.allSettled([
-                listMachines({ page: 1, page_size: 5, sort: 'best' }),
+                listMachines({ page: 1, page_size: 5, sort: 'best' }, ctx?.token),
                 ctx?.token ? getActiveSession(ctx.token) : Promise.resolve(null),
                 ctx?.token ? getMySubscription(ctx.token) : Promise.resolve(null),
             ])

@@ -20,6 +20,8 @@ CREATE INDEX IF NOT EXISTS ix_revoked_tokens_expires_at ON revoked_tokens(expire
 CREATE INDEX IF NOT EXISTS ix_machines_status ON machines(status);
 CREATE INDEX IF NOT EXISTS ix_machines_region_status ON machines(region, status);
 CREATE INDEX IF NOT EXISTS ix_machines_ping_ms ON machines(ping_ms);
+CREATE INDEX IF NOT EXISTS ix_machines_trial_eligible ON machines(trial_eligible, status);
+CREATE INDEX IF NOT EXISTS ix_machines_base_rate ON machines(base_rate_per_minute);
 
 CREATE INDEX IF NOT EXISTS ix_service_plans_active ON service_plans(active);
 
@@ -36,9 +38,14 @@ CREATE INDEX IF NOT EXISTS ix_vpn_sessions_user ON vpn_sessions(user_id);
 CREATE INDEX IF NOT EXISTS ix_vpn_sessions_machine ON vpn_sessions(machine_id);
 CREATE INDEX IF NOT EXISTS ix_vpn_sessions_status ON vpn_sessions(status);
 CREATE INDEX IF NOT EXISTS ix_vpn_sessions_started_at ON vpn_sessions(started_at);
+CREATE INDEX IF NOT EXISTS ix_vpn_sessions_snapshot_retained ON vpn_sessions(user_id, snapshot_retained, ended_at);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_vpn_sessions_one_active_machine
     ON vpn_sessions(machine_id)
     WHERE machine_id IS NOT NULL AND status = 'active' AND ended_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS ix_session_billing_events_user_day ON session_billing_events(user_id, billing_day);
+CREATE INDEX IF NOT EXISTS ix_session_billing_events_session ON session_billing_events(session_id);
+CREATE INDEX IF NOT EXISTS ix_session_billing_events_created_at ON session_billing_events(created_at);
 
 CREATE INDEX IF NOT EXISTS ix_machine_logs_machine ON machine_logs(machine_id);
 CREATE INDEX IF NOT EXISTS ix_machine_logs_session ON machine_logs(session_id);

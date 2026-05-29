@@ -403,7 +403,7 @@ function Admin({ ctx }) {
     const [machineError, setMachineError] = useState('')
     const [machineLoading, setMachineLoading] = useState(false)
     const [machineFilters, setMachineFilters] = useState({ region: '', gpu: '', status: '' })
-    const [newMachine, setNewMachine] = useState({ code: '', region: '', gpu: '', ping_ms: '', status: 'idle', location: '' })
+    const [newMachine, setNewMachine] = useState({ code: '', region: '', gpu: '', ping_ms: '', status: 'idle', location: '', base_rate_per_minute: '', trial_eligible: false })
 
     // Sessions
     const [sessionPage, setSessionPage] = useState(1)
@@ -474,7 +474,7 @@ function Admin({ ctx }) {
                 try {
                     const raw = localStorage.getItem('admin_settings_draft')
                     if (raw && !cancelled) setSettingsForm(prev => ({ ...prev, ...JSON.parse(raw) }))
-                } catch (_e) { /* fallback silent */ }
+                } catch { /* fallback silent */ }
             }
         }
         loadSettings()
@@ -485,18 +485,18 @@ function Admin({ ctx }) {
     const loadDashboard = useCallback(async () => {
         if (!isAdmin) return
         setDashboardLoading(true)
-        try { setDashboard(await getDashboard(token)) } catch (_e) { /* silent */ }
+        try { setDashboard(await getDashboard(token)) } catch { /* silent */ }
         finally { setDashboardLoading(false) }
     }, [token, isAdmin])
 
     const loadRevenueStats = useCallback(async () => {
         if (!isAdmin) return
-        try { setRevenueStats(await getRevenueStatistics(revenueDateRange, token)) } catch (_e) { /* silent */ }
+        try { setRevenueStats(await getRevenueStatistics(revenueDateRange, token)) } catch { /* silent */ }
     }, [token, isAdmin, revenueDateRange])
 
     const loadMachineStats = useCallback(async () => {
         if (!isAdmin) return
-        try { setMachineStats(await getMachineStatistics(token)) } catch (_e) { /* silent */ }
+        try { setMachineStats(await getMachineStatistics(token)) } catch { /* silent */ }
     }, [token, isAdmin])
 
     const loadUsers = useCallback(async () => {
@@ -626,8 +626,10 @@ function Admin({ ctx }) {
                 ping_ms: newMachine.ping_ms ? Number(newMachine.ping_ms) : null,
                 status: newMachine.status,
                 location: newMachine.location || null,
+                base_rate_per_minute: newMachine.base_rate_per_minute ? Number(newMachine.base_rate_per_minute) : null,
+                trial_eligible: Boolean(newMachine.trial_eligible),
             }, token)
-            setNewMachine({ code: '', region: '', gpu: '', ping_ms: '', status: 'idle', location: '' })
+            setNewMachine({ code: '', region: '', gpu: '', ping_ms: '', status: 'idle', location: '', base_rate_per_minute: '', trial_eligible: false })
             setMachinePage(1)
             loadMachines(); loadMachineStats(); loadDashboard()
             showToast('Tạo máy chủ mới thành công')
@@ -1049,8 +1051,10 @@ function Admin({ ctx }) {
                                         onChange={e => { setMachineFilters(p => ({ ...p, status: e.target.value })); setMachinePage(1) }}>
                                         <option value="">Tất cả</option>
                                         <option value="idle">Idle</option>
-                                        <option value="busy">Busy</option>
+                                        <option value="running">Running</option>
+                                        <option value="suspended">Suspended</option>
                                         <option value="maintenance">Maintenance</option>
+                                        <option value="offline">Offline</option>
                                     </select>
                                 </div>
                             </div>
@@ -1072,6 +1076,11 @@ function Admin({ ctx }) {
                                     </div>
                                     <input placeholder="GPU" value={newMachine.gpu} onChange={e => setNewMachine(p => ({ ...p, gpu: e.target.value }))} />
                                     <input placeholder="Ping (ms)" type="number" min="0" value={newMachine.ping_ms} onChange={e => setNewMachine(p => ({ ...p, ping_ms: e.target.value }))} />
+                                    <input placeholder="Giá/phút" type="number" min="0" value={newMachine.base_rate_per_minute} onChange={e => setNewMachine(p => ({ ...p, base_rate_per_minute: e.target.value }))} />
+                                    <label className="field" style={{ margin: 0 }}>
+                                        <span>Trial</span>
+                                        <input type="checkbox" checked={newMachine.trial_eligible} onChange={e => setNewMachine(p => ({ ...p, trial_eligible: e.target.checked }))} />
+                                    </label>
                                     <input placeholder="Location" value={newMachine.location} onChange={e => setNewMachine(p => ({ ...p, location: e.target.value }))} />
                                     <button className="btn primary" onClick={handleCreateMachine} disabled={!newMachine.code}>Thêm máy</button>
                                 </div>
@@ -1103,8 +1112,10 @@ function Admin({ ctx }) {
                                                 <select className={`status-select ${m.status}`} value={m.status}
                                                     onChange={e => handleMachineUpdate(m.id, { status: e.target.value })}>
                                                     <option value="idle">idle</option>
-                                                    <option value="busy">busy</option>
+                                                    <option value="running">running</option>
+                                                    <option value="suspended">suspended</option>
                                                     <option value="maintenance">maintenance</option>
+                                                    <option value="offline">offline</option>
                                                 </select>
                                             </span>
                                             <span className="actions">
@@ -1444,7 +1455,7 @@ function Admin({ ctx }) {
                                             <p className="setting-desc">Giới hạn số lượng bản snapshot được lưu trữ trên mỗi máy</p>
                                         </div>
                                         <div className="setting-control">
-                                            <input type="number" min="1" max="10" value={settingsForm.snapshot_retention_count}
+                                            <input type="number" min="1" max="20" value={settingsForm.snapshot_retention_count}
                                                 onChange={e => handleSettingsChange('snapshot_retention_count', Number(e.target.value))} />
                                             <span className="setting-unit">bản</span>
                                         </div>

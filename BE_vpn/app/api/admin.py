@@ -147,6 +147,16 @@ def admin_stop_session(
     return admin_service.stop_session(session_id)
 
 
+@router.post("/sessions/{session_id}/fail", response_model=schemas.MessageResponse)
+def admin_fail_session(
+    session_id: UUID,
+    payload: schemas.AdminSessionFailRequest,
+    _: models.User = Depends(require_admin),
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    return admin_service.fail_session(session_id, payload)
+
+
 @router.get("/transactions/export", response_model=None)
 def admin_export_transactions_csv(
     status_filter: str | None = Query(None, alias="status"),

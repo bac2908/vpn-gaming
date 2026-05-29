@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listPlans, purchasePlan, getMySubscription } from '../api/subscriptions'
+import { listMachines } from '../api/machines'
+
+const formatRate = (amount) => `${formatCurrency(amount)}/phút`
 
 const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN').format(amount || 0) + 'đ'
 
@@ -19,18 +22,184 @@ const formatQuota = (plan) => {
     return `${plan.data_limit_gb}GB`
 }
 
+const getErrorMessage = (err, fallback) => {
+    if (!err) return fallback
+    if (typeof err === 'string') return err
+    if (err.message) return err.message
+    if (err.detail) return err.detail
+    try {
+        return JSON.stringify(err)
+    } catch {
+        return fallback
+    }
+}
+
+const PLAN_CONTENT = {
+    basic: {
+        displayName: 'BASIC',
+        badge: 'BASIC',
+        tagline: 'Dành cho người mới bắt đầu trải nghiệm cloud gaming với chi phí thấp.',
+        suitableFor: ['Sinh viên', 'Casual gamer', 'Người mới dùng hệ thống'],
+        benefits: [
+            { label: 'Giảm giá chơi', value: '~15-20%' },
+            { label: 'Trial mỗi ngày', value: '15 phút miễn phí' },
+            { label: 'Snapshot', value: '2 snapshot' },
+            { label: 'Queue Priority', value: 'Cấp 1' },
+            { label: 'VPN Gaming', value: 'Standard' },
+            { label: 'Resume Session', value: 'Có' },
+            { label: 'Region', value: 'VN + Trial Regions' },
+            { label: 'Hỗ trợ', value: 'Thường' },
+        ],
+        savingsNote: 'Tiết kiệm tới 20% chi phí chơi game',
+        rates: [
+            { gpu: 'RTX 3070', price: 65 },
+            { gpu: 'RTX 3080', price: 85 },
+            { gpu: 'RTX 4080', price: 120 },
+            { gpu: 'T4', price: 45 },
+        ],
+        price: 59000,
+        featured: false,
+    },
+    pro: {
+        displayName: 'PRO',
+        badge: 'PRO',
+        tagline: 'Lựa chọn tốt nhất cho đa số game thủ với mức giá hợp lý và hiệu năng tối ưu.',
+        suitableFor: ['Game thủ chơi thường xuyên', 'Đa số người dùng'],
+        benefits: [
+            { label: 'Giảm giá chơi', value: '~30-35%' },
+            { label: 'Snapshot', value: '5 snapshot' },
+            { label: 'Queue Priority', value: 'Cấp 2' },
+            { label: 'VPN Gaming', value: 'Advanced' },
+            { label: 'Resume nhanh', value: 'Có' },
+            { label: 'Region', value: 'VN + SG + Asia' },
+            { label: 'Session Max', value: '8 giờ' },
+            { label: 'Smart Routing', value: 'Có' },
+            { label: 'Hỗ trợ', value: 'Ưu tiên' },
+        ],
+        savingsNote: 'Tiết kiệm tới 35% chi phí chơi game',
+        rates: [
+            { gpu: 'RTX 3070', price: 55 },
+            { gpu: 'RTX 3080', price: 75 },
+            { gpu: 'RTX 4080', price: 100 },
+            { gpu: 'T4', price: 40 },
+        ],
+        price: 119000,
+        featured: true,
+        featuredLabel: 'Khuyên dùng',
+    },
+    premium: {
+        displayName: 'PREMIUM',
+        badge: 'PREMIUM',
+        tagline: 'Trải nghiệm cloud gaming cao cấp với ưu tiên cao nhất và kết nối nhanh nhất.',
+        suitableFor: ['Hardcore gamer', 'Người muốn ping tốt nhất'],
+        benefits: [
+            { label: 'Giảm giá chơi', value: '~45-50%' },
+            { label: 'Snapshot', value: '20 snapshot' },
+            { label: 'Queue Priority', value: 'Cao nhất' },
+            { label: 'VPN Gaming', value: 'Fastest Route' },
+            { label: 'Resume cực nhanh', value: 'Có' },
+            { label: 'Region', value: 'Global' },
+            { label: 'Session Max', value: '24 giờ' },
+            { label: 'Smart Routing', value: 'Có' },
+            { label: 'VIP Support', value: '24/7' },
+            { label: 'Dedicated Queue', value: 'Có' },
+            { label: 'Daily Cap', value: 'Tùy chỉnh' },
+        ],
+        savingsNote: 'Tiết kiệm tới 50% chi phí chơi game',
+        rates: [
+            { gpu: 'RTX 3070', price: 45 },
+            { gpu: 'RTX 3080', price: 65 },
+            { gpu: 'RTX 4080', price: 85 },
+            { gpu: 'T4', price: 35 },
+        ],
+        price: 249000,
+        featured: false,
+    },
+}
+
+const COMPARISON_ROWS = [
+    {
+        feature: 'Trial mỗi ngày',
+        note: 'Áp dụng trên máy trial',
+        values: { free: '15 phút', basic: '15 phút', pro: '15 phút', premium: '15 phút' },
+    },
+    {
+        feature: 'Snapshot',
+        note: 'Số snapshot đang giữ',
+        values: { free: '0', basic: '2', pro: '5', premium: '20' },
+    },
+    {
+        feature: 'Region',
+        note: 'Phạm vi ưu tiên',
+        values: { free: 'Trial Regions', basic: 'VN + Trial Regions', pro: 'VN + SG + Asia', premium: 'Global' },
+    },
+    {
+        feature: 'Smart Routing',
+        note: 'Tối ưu đường truyền',
+        values: { free: 'Không', basic: 'Không', pro: 'Có', premium: 'Có' },
+    },
+    {
+        feature: 'Queue Priority',
+        note: 'Thứ tự xếp hàng',
+        values: { free: 'Thấp', basic: 'Cấp 1', pro: 'Cấp 2', premium: 'Cao nhất' },
+    },
+]
+
+const PAYG_INFO = {
+    title: 'Free / PAYG',
+    subtitle: 'Không phải gói dịch vụ',
+    description: 'Người mới nhận 15 phút miễn phí mỗi ngày trên máy Trial, sau đó tính tiền theo phút.',
+    highlights: ['15 phút miễn phí/ngày', 'Chơi máy Trial', 'PAYG tính theo phút'],
+}
+
+const getPlanKey = (plan = {}) => {
+    const raw = `${plan.code || ''} ${plan.name || ''}`.toLowerCase()
+    if (raw.includes('basic')) return 'basic'
+    if (raw.includes('pro')) return 'pro'
+    if (raw.includes('premium')) return 'premium'
+    return 'generic'
+}
+
 const getPlanView = (plan = {}) => {
+    const key = getPlanKey(plan)
+    const content = PLAN_CONTENT[key]
+    if (content) {
+        return {
+            ...content,
+            displayName: content.displayName,
+            price: content.price,
+        }
+    }
+
+    const standardSample = plan.standard_sample_rate_per_minute || 250
+    const memberSample = plan.member_sample_rate_per_minute || plan.play_rate_per_minute || standardSample
+    const discount = Number(plan.discount_percent || 0)
     return {
         displayName: plan.name || 'Gói dịch vụ',
         badge: plan.active ? 'Đang mở bán' : 'Tạm ẩn',
-        useCase: plan.description || 'Thông tin gói được lấy từ hệ thống.',
+        tagline: plan.description || 'Thông tin gói được lấy từ hệ thống.',
+        suitableFor: [],
         benefits: [
-            `Mã gói: ${plan.code || 'Chưa có mã'}`,
-            `Thời hạn: ${plan.duration_days ? `${plan.duration_days} ngày` : 'Chưa cấu hình'}`,
-            `Dung lượng: ${formatQuota(plan)}`,
+            { label: 'Giảm giá PAYG', value: `${discount}%` },
+            { label: 'Ví dụ RTX 4090', value: `${formatRate(standardSample)} -> ${formatRate(memberSample)}` },
+            { label: 'Queue Priority', value: `+${plan.queue_priority || 0}` },
+            { label: 'Snapshot', value: `${plan.snapshot_active_limit || 0}` },
+            { label: 'Region ưu tiên', value: (plan.allowed_regions || []).join(', ') || '-' },
+            {
+                label: 'Max session',
+                value: plan.max_session_seconds ? `${Math.round(plan.max_session_seconds / 3600 * 10) / 10} giờ` : '-',
+            },
         ],
+        rates: [],
         featured: false,
     }
+}
+
+const pickHighlights = (benefits = []) => {
+    const preferred = ['Giảm giá chơi', 'Snapshot', 'Region', 'Queue Priority']
+    const picked = benefits.filter((item) => preferred.includes(item.label))
+    if (picked.length >= 3) return picked.slice(0, 4)
+    return benefits.slice(0, 4)
 }
 
 function Subscriptions({ ctx }) {
@@ -38,6 +207,8 @@ function Subscriptions({ ctx }) {
     const balance = Number(ctx?.user?.balance || 0)
     const [plans, setPlans] = useState([])
     const [mySub, setMySub] = useState(null)
+    const [trialMachines, setTrialMachines] = useState([])
+    const [trialLoading, setTrialLoading] = useState(true)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [success, setSuccess] = useState('')
@@ -45,11 +216,15 @@ function Subscriptions({ ctx }) {
     const [selectedPlan, setSelectedPlan] = useState(null)
 
     const sortedPlans = useMemo(
-        () => [...plans].sort((a, b) => (a.price_cents ?? a.price ?? 0) - (b.price_cents ?? b.price ?? 0)),
+        () => [...plans].sort((a, b) => {
+            const aView = getPlanView(a)
+            const bView = getPlanView(b)
+            const aPrice = aView.price ?? a.price_cents ?? a.price ?? 0
+            const bPrice = bView.price ?? b.price_cents ?? b.price ?? 0
+            return aPrice - bPrice
+        }),
         [plans],
     )
-
-    const recommendedPlan = sortedPlans[0]
     const currentPlan = mySub?.plan || sortedPlans.find((plan) => plan.id === mySub?.plan_id)
 
     useEffect(() => {
@@ -59,23 +234,42 @@ function Subscriptions({ ctx }) {
             setLoading(true)
             setError('')
             try {
-                const [plansData, subData] = await Promise.all([
+                const [plansResult, subResult, machinesResult] = await Promise.allSettled([
                     listPlans(),
                     token ? getMySubscription(token) : Promise.resolve(null),
+                    listMachines({ page: 1, page_size: 120 }, token),
                 ])
-                if (!cancelled) {
+                if (cancelled) return
+
+                if (plansResult.status === 'fulfilled') {
+                    const plansData = plansResult.value
                     const items = Array.isArray(plansData?.items)
                         ? plansData.items
                         : Array.isArray(plansData)
                             ? plansData
                             : []
                     setPlans(items)
-                    setMySub(subData)
+                } else {
+                    setPlans([])
+                    setError(getErrorMessage(plansResult.reason, 'Không tải được danh sách gói cước'))
                 }
-            } catch (err) {
-                if (!cancelled) setError(err.message || 'Không tải được danh sách gói cước')
+
+                if (subResult.status === 'fulfilled') {
+                    setMySub(subResult.value)
+                }
+
+                if (machinesResult.status === 'fulfilled') {
+                    const machineItems = machinesResult.value?.items || []
+                    const trialItems = machineItems.filter((machine) => machine?.trial_eligible)
+                    setTrialMachines(trialItems)
+                } else {
+                    setTrialMachines([])
+                }
             } finally {
-                if (!cancelled) setLoading(false)
+                if (!cancelled) {
+                    setLoading(false)
+                    setTrialLoading(false)
+                }
             }
         }
 
@@ -130,7 +324,7 @@ function Subscriptions({ ctx }) {
                     <p className="muted">Gói dịch vụ</p>
                     <h2>Nâng cấp trải nghiệm cloud gaming</h2>
                     <p className="muted small">
-                        Tất cả giá đều là VND và được trừ từ số dư tài khoản. Gói có hiệu lực ngay sau khi mua thành công.
+                        Giá gói tính theo tháng, trừ trực tiếp từ số dư. PAYG tính theo phút và áp dụng cho tất cả máy.
                     </p>
                 </div>
             </div>
@@ -161,8 +355,8 @@ function Subscriptions({ ctx }) {
                 {sortedPlans.map((plan) => {
                     const view = getPlanView(plan)
                     const isCurrent = mySub?.plan_id === plan.id
-                    const isRecommended = recommendedPlan?.id === plan.id
-                    const price = plan.price_cents ?? plan.price ?? 0
+                    const isRecommended = view.featured
+                    const price = view.price ?? plan.price_cents ?? plan.price ?? 0
                     const hasEnoughBalance = balance >= price
                     const isBuying = buyingPlanId === plan.id
                     const actionLabel = isCurrent
@@ -170,6 +364,10 @@ function Subscriptions({ ctx }) {
                         : hasEnoughBalance
                             ? mySub ? 'Đổi sang gói này' : 'Mua gói này'
                             : 'Nạp tiền để mua'
+                    const badgeLabel = plan.active ? view.badge : 'Tạm ẩn'
+                    const hasBenefitPairs = Array.isArray(view.benefits) && view.benefits.length > 0
+                    const hasRates = Array.isArray(view.rates) && view.rates.length > 0
+                    const highlights = hasBenefitPairs ? pickHighlights(view.benefits) : []
 
                     return (
                         <div
@@ -178,53 +376,125 @@ function Subscriptions({ ctx }) {
                         >
                             <div className="plan-top">
                                 <div>
-                                    <span className="plan-badge">{view.badge}</span>
+                                    <span className="plan-badge">{badgeLabel}</span>
                                     <h3>{view.displayName}</h3>
                                 </div>
-                                {isRecommended && !isCurrent && <span className="pill ghost">Khuyên dùng</span>}
+                                {isRecommended && !isCurrent && <span className="pill ghost">{view.featuredLabel || 'Khuyên dùng'}</span>}
                                 {isCurrent && <span className="pill">Hiện tại</span>}
                             </div>
 
                             <div className="plan-price">
                                 <strong>{formatCurrency(price)}</strong>
-                                <span>/ gói</span>
+                                <span>/ tháng</span>
                             </div>
 
-                            <p className="muted small plan-summary">{view.useCase}</p>
+                            <p className="muted small plan-tagline">{view.tagline}</p>
 
-                            <div className="plan-metrics">
-                                <div>
-                                    <span>Thời hạn</span>
-                                    <strong>{plan.duration_days ? `${plan.duration_days} ngày` : '-'}</strong>
-                                </div>
-                                <div>
-                                    <span>Dung lượng</span>
-                                    <strong>{formatQuota(plan)}</strong>
-                                </div>
-                            </div>
-
-                            <ul className="plan-features">
-                                {view.benefits.map((benefit) => (
-                                    <li key={benefit}>{benefit}</li>
-                                ))}
-                            </ul>
-
-                            {!isCurrent && !hasEnoughBalance && (
-                                <div className="plan-balance-warning">
-                                    Cần thêm {formatCurrency(price - balance)} để mua gói này.
+                            {view.suitableFor?.length > 0 && (
+                                <div className="plan-section">
+                                    <div className="plan-section-title">Phù hợp</div>
+                                    <div className="plan-chip-list">
+                                        {view.suitableFor.map((item) => (
+                                            <span key={item} className="plan-chip">{item}</span>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
 
-                            <button
-                                className={`btn ${isRecommended ? 'primary' : 'secondary'}`}
-                                onClick={() => (hasEnoughBalance ? openPurchaseDialog(plan) : ctx?.openTopup?.())}
-                                disabled={Boolean(buyingPlanId) || isCurrent}
-                            >
-                                {isBuying ? 'Đang xử lý...' : actionLabel}
-                            </button>
+                            {highlights.length > 0 && (
+                                <div className="plan-section">
+                                    <div className="plan-section-title">Điểm nổi bật</div>
+                                    <div className="plan-benefit-grid">
+                                        {highlights.map((benefit) => (
+                                            <div key={benefit.label} className="plan-benefit">
+                                                <span>{benefit.label}</span>
+                                                <strong>{benefit.value}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {view.savingsNote && (
+                                <div className="plan-section">
+                                    <div className="plan-section-title">Tiết kiệm</div>
+                                    <div className="plan-savings">
+                                        <strong>{view.savingsNote}</strong>
+                                    </div>
+                                </div>
+                            )}
+
+                            {hasRates && (
+                                <div className="plan-section">
+                                    <div className="plan-section-title">Giá chơi sau khi mua</div>
+                                    <div className="plan-rate-table compact">
+                                        {view.rates.slice(0, 2).map((rate) => (
+                                            <div key={`${view.displayName}-${rate.gpu}`} className="plan-rate-row">
+                                                <span>{rate.gpu}</span>
+                                                <strong>{formatRate(rate.price)}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <span className="muted small">Xem đầy đủ tại trang Máy.</span>
+                                </div>
+                            )}
+
+
+                            <div className="plan-actions">
+                                {!isCurrent && !hasEnoughBalance && (
+                                    <div className="plan-balance-warning">
+                                        Cần thêm {formatCurrency(price - balance)} để mua gói này.
+                                    </div>
+                                )}
+
+                                <button
+                                    className={`btn ${isRecommended ? 'primary' : 'secondary'}`}
+                                    onClick={() => (hasEnoughBalance ? openPurchaseDialog(plan) : ctx?.openTopup?.())}
+                                    disabled={Boolean(buyingPlanId) || isCurrent}
+                                >
+                                    {isBuying ? 'Đang xử lý...' : actionLabel}
+                                </button>
+                            </div>
                         </div>
                     )
                 })}
+            </div>
+
+            <div className="card plan-compare">
+                <div className="plan-compare-head">
+                    <div>
+                        <p className="muted">So sánh nhanh</p>
+                        <h3>Lợi ích theo từng gói</h3>
+                    </div>
+                </div>
+                <div className="plan-compare-grid">
+                    {COMPARISON_ROWS.map((row) => (
+                        <div key={row.feature} className="compare-item">
+                            <div className="compare-feature">
+                                <strong>{row.feature}</strong>
+                                <span className="muted small">{row.note}</span>
+                            </div>
+                            <div className="compare-cells">
+                                <div className="compare-cell">
+                                    <span className="compare-tier">Free</span>
+                                    <strong>{row.values.free}</strong>
+                                </div>
+                                <div className="compare-cell">
+                                    <span className="compare-tier">Basic</span>
+                                    <strong>{row.values.basic}</strong>
+                                </div>
+                                <div className="compare-cell">
+                                    <span className="compare-tier">Pro</span>
+                                    <strong>{row.values.pro}</strong>
+                                </div>
+                                <div className="compare-cell highlight">
+                                    <span className="compare-tier">Premium</span>
+                                    <strong>{row.values.premium}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {!plans.length && (
@@ -262,7 +532,7 @@ function Subscriptions({ ctx }) {
 
 function PurchasePlanDialog({ plan, currentPlan, balance, buying, onClose, onConfirm }) {
     const view = getPlanView(plan)
-    const price = plan.price_cents ?? plan.price ?? 0
+    const price = view.price ?? plan.price_cents ?? plan.price ?? 0
     const balanceAfter = balance - price
     const isChangingPlan = Boolean(currentPlan?.id && currentPlan.id !== plan.id)
 

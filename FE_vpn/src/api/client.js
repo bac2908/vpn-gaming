@@ -23,7 +23,7 @@ async function request(path, { method = 'GET', headers = {}, body, token } = {})
     let data = null
     try {
         data = text ? JSON.parse(text) : null
-    } catch (err) {
+    } catch {
         data = text
     }
 

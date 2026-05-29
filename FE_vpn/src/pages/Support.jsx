@@ -250,7 +250,7 @@ function PolicySupport() {
       id: 'system-status',
       title: 'Trạng thái hệ thống',
       desc: 'Theo dõi trạng thái máy cloud, VPN, Moonlight và luồng khởi tạo để biết nên kiểm tra bước nào khi kết nối chưa ổn định.',
-      points: ['Máy cloud: idle, busy hoặc maintenance', 'VPN: profile, route và IP local', 'Moonlight: pairing, stream và độ trễ'],
+      points: ['Máy cloud: idle, running, suspended, maintenance hoặc offline', 'VPN: profile, route và IP local', 'Moonlight: pairing, stream và độ trễ'],
     },
   ]
 
@@ -291,7 +291,10 @@ function Documentation() {
 
   useEffect(() => {
     if (['#guide-openvpn', '#guide-moonlight', '#docs-faq'].includes(location.hash)) {
-      setActiveTab(getTabFromHash(location.hash))
+      const frame = window.requestAnimationFrame(() => {
+        setActiveTab(getTabFromHash(location.hash))
+      })
+      return () => window.cancelAnimationFrame(frame)
     }
   }, [location.hash])
 

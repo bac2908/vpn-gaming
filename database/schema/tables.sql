@@ -87,9 +87,13 @@ CREATE TABLE IF NOT EXISTS machines (
     status TEXT NOT NULL DEFAULT 'idle',
     last_heartbeat TIMESTAMPTZ,
     location TEXT,
+    cooldown_until TIMESTAMPTZ,
+    base_rate_per_minute INTEGER NOT NULL DEFAULT 0,
+    trial_eligible BOOLEAN NOT NULL DEFAULT false,
     CONSTRAINT uq_machines_code UNIQUE (code),
-    CONSTRAINT ck_machines_status CHECK (status IN ('idle', 'busy', 'maintenance', 'offline')),
-    CONSTRAINT ck_machines_ping_non_negative CHECK (ping_ms IS NULL OR ping_ms >= 0)
+    CONSTRAINT ck_machines_status CHECK (status IN ('idle', 'busy', 'running', 'suspended', 'maintenance', 'offline')),
+    CONSTRAINT ck_machines_ping_non_negative CHECK (ping_ms IS NULL OR ping_ms >= 0),
+    CONSTRAINT ck_machines_base_rate_non_negative CHECK (base_rate_per_minute >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS service_plans (
@@ -134,10 +138,60 @@ CREATE TABLE IF NOT EXISTS vpn_sessions (
     ip_address TEXT,
     bytes_up BIGINT NOT NULL DEFAULT 0,
     bytes_down BIGINT NOT NULL DEFAULT 0,
+    billing_tier TEXT,
+    play_rate_per_minute INTEGER NOT NULL DEFAULT 0,
+    billing_started_at TIMESTAMPTZ,
+    last_billed_at TIMESTAMPTZ,
+    charged_minutes INTEGER NOT NULL DEFAULT 0,
+    charged_amount BIGINT NOT NULL DEFAULT 0,
+    free_minutes_used INTEGER NOT NULL DEFAULT 0,
+    trial_eligible BOOLEAN NOT NULL DEFAULT false,
+    lifecycle_state TEXT NOT NULL DEFAULT 'running',
+    billing_state TEXT NOT NULL DEFAULT 'free',
+    connection_state TEXT NOT NULL DEFAULT 'connected',
+    last_client_heartbeat_at TIMESTAMPTZ,
+    last_stream_activity_at TIMESTAMPTZ,
+    disconnected_at TIMESTAMPTZ,
+    idle_warning_at TIMESTAMPTZ,
+    stop_reason TEXT,
+    max_session_seconds INTEGER NOT NULL DEFAULT 0,
+    grace_period_seconds INTEGER NOT NULL DEFAULT 300,
+    idle_warning_seconds INTEGER NOT NULL DEFAULT 600,
+    idle_stop_seconds INTEGER NOT NULL DEFAULT 900,
+    cooldown_seconds INTEGER NOT NULL DEFAULT 60,
+    queue_priority INTEGER NOT NULL DEFAULT 0,
+    max_concurrent_sessions INTEGER NOT NULL DEFAULT 1,
+    snapshot_active_limit INTEGER NOT NULL DEFAULT 0,
+    snapshot_retained BOOLEAN NOT NULL DEFAULT false,
+    snapshot_archived_at TIMESTAMPTZ,
+    refunded_amount BIGINT NOT NULL DEFAULT 0,
+    refund_reason TEXT,
+    refund_status TEXT NOT NULL DEFAULT 'none',
     CONSTRAINT ck_vpn_sessions_status CHECK (status IN ('active', 'stopped', 'failed')),
     CONSTRAINT ck_vpn_sessions_valid_period CHECK (ended_at IS NULL OR ended_at > started_at),
     CONSTRAINT ck_vpn_sessions_bytes_up_non_negative CHECK (bytes_up >= 0),
-    CONSTRAINT ck_vpn_sessions_bytes_down_non_negative CHECK (bytes_down >= 0)
+    CONSTRAINT ck_vpn_sessions_bytes_down_non_negative CHECK (bytes_down >= 0),
+    CONSTRAINT ck_vpn_sessions_rate_non_negative CHECK (play_rate_per_minute >= 0),
+    CONSTRAINT ck_vpn_sessions_charged_minutes_non_negative CHECK (charged_minutes >= 0),
+    CONSTRAINT ck_vpn_sessions_charged_amount_non_negative CHECK (charged_amount >= 0),
+    CONSTRAINT ck_vpn_sessions_free_minutes_non_negative CHECK (free_minutes_used >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS session_billing_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id UUID REFERENCES vpn_sessions(id) ON DELETE SET NULL,
+    machine_id UUID REFERENCES machines(id) ON DELETE SET NULL,
+    billing_day DATE NOT NULL,
+    tier TEXT NOT NULL,
+    charged_minutes INTEGER NOT NULL DEFAULT 0,
+    free_minutes INTEGER NOT NULL DEFAULT 0,
+    amount BIGINT NOT NULL DEFAULT 0,
+    event_type TEXT NOT NULL DEFAULT 'charge',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_session_billing_charged_minutes_non_negative CHECK (charged_minutes >= 0),
+    CONSTRAINT ck_session_billing_free_minutes_non_negative CHECK (free_minutes >= 0),
+    CONSTRAINT ck_session_billing_amount_non_negative CHECK (amount >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS machine_logs (
@@ -217,7 +271,7 @@ CREATE TABLE IF NOT EXISTS admin_settings (
     CONSTRAINT ck_admin_settings_lockout_minutes CHECK (lockout_minutes BETWEEN 1 AND 1440),
     CONSTRAINT ck_admin_settings_min_topup_amount CHECK (min_topup_amount >= 10000),
     CONSTRAINT ck_admin_settings_session_timeout_hours CHECK (session_timeout_hours BETWEEN 1 AND 168),
-    CONSTRAINT ck_admin_settings_snapshot_retention_count CHECK (snapshot_retention_count BETWEEN 1 AND 10)
+    CONSTRAINT ck_admin_settings_snapshot_retention_count CHECK (snapshot_retention_count BETWEEN 1 AND 20)
 );
 
 -- =====================================================

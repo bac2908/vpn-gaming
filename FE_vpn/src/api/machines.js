@@ -9,9 +9,9 @@ function buildQuery(params = {}) {
     return query ? `?${query}` : ''
 }
 
-export async function listMachines(params) {
+export async function listMachines(params, token) {
     const query = buildQuery(params)
-    return request(`/machines${query}`)
+    return request(`/machines${query}`, { token })
 }
 
 export async function getMachine(machineId, token) {
@@ -47,6 +47,10 @@ export async function stopSession(sessionId, token) {
     return request(`/machines/sessions/${sessionId}/stop`, { method: 'POST', token })
 }
 
+export async function heartbeatSession(sessionId, payload = {}, token) {
+    return request(`/machines/sessions/${sessionId}/heartbeat`, { method: 'POST', body: payload, token })
+}
+
 export async function checkVpnConnection(sessionId, token) {
     return request(`/machines/sessions/${sessionId}/vpn/check`, { method: 'POST', token })
 }
@@ -73,7 +77,7 @@ export async function downloadOvpn(sessionId, token) {
         let data = null
         try {
             data = text ? JSON.parse(text) : null
-        } catch (err) {
+        } catch {
             data = text
         }
         const message = data?.detail || data?.message || `Request failed (${response.status})`

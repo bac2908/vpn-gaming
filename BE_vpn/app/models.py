@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, func, Text, Integer, LargeBinary, Boolean, BigInteger, Index
+from sqlalchemy import Column, String, DateTime, ForeignKey, func, Text, Integer, LargeBinary, Boolean, BigInteger, Index, Date
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -58,6 +58,9 @@ class Machine(Base):
     status = Column(String, nullable=False, default="idle")
     last_heartbeat = Column(DateTime(timezone=True))
     location = Column(String)
+    cooldown_until = Column(DateTime(timezone=True))
+    base_rate_per_minute = Column(Integer, nullable=False, default=0)
+    trial_eligible = Column(Boolean, nullable=False, default=False)
 
     vpn_sessions = relationship("VpnSession", back_populates="machine")
     machine_logs = relationship("MachineLog", back_populates="machine", cascade="all, delete-orphan")
@@ -208,11 +211,41 @@ class VpnSession(Base):
     ip_address = Column(String)
     bytes_up = Column(BigInteger, nullable=False, default=0)
     bytes_down = Column(BigInteger, nullable=False, default=0)
+    billing_tier = Column(String)
+    play_rate_per_minute = Column(Integer, nullable=False, default=0)
+    billing_started_at = Column(DateTime(timezone=True))
+    last_billed_at = Column(DateTime(timezone=True))
+    charged_minutes = Column(Integer, nullable=False, default=0)
+    charged_amount = Column(BigInteger, nullable=False, default=0)
+    free_minutes_used = Column(Integer, nullable=False, default=0)
+    trial_eligible = Column(Boolean, nullable=False, default=False)
+    lifecycle_state = Column(String, nullable=False, default="running")
+    billing_state = Column(String, nullable=False, default="free")
+    connection_state = Column(String, nullable=False, default="connected")
+    last_client_heartbeat_at = Column(DateTime(timezone=True))
+    last_stream_activity_at = Column(DateTime(timezone=True))
+    disconnected_at = Column(DateTime(timezone=True))
+    idle_warning_at = Column(DateTime(timezone=True))
+    stop_reason = Column(String)
+    max_session_seconds = Column(Integer, nullable=False, default=0)
+    grace_period_seconds = Column(Integer, nullable=False, default=300)
+    idle_warning_seconds = Column(Integer, nullable=False, default=600)
+    idle_stop_seconds = Column(Integer, nullable=False, default=900)
+    cooldown_seconds = Column(Integer, nullable=False, default=60)
+    queue_priority = Column(Integer, nullable=False, default=0)
+    max_concurrent_sessions = Column(Integer, nullable=False, default=1)
+    snapshot_active_limit = Column(Integer, nullable=False, default=0)
+    snapshot_retained = Column(Boolean, nullable=False, default=False)
+    snapshot_archived_at = Column(DateTime(timezone=True))
+    refunded_amount = Column(BigInteger, nullable=False, default=0)
+    refund_reason = Column(String)
+    refund_status = Column(String, nullable=False, default="none")
 
     user = relationship("User", back_populates="vpn_sessions")
     subscription = relationship("Subscription", back_populates="vpn_sessions")
     machine = relationship("Machine", back_populates="vpn_sessions")
     machine_logs = relationship("MachineLog", back_populates="session")
+    billing_events = relationship("SessionBillingEvent", back_populates="session")
 
     @property
     def vpn_online(self) -> bool:
@@ -225,6 +258,28 @@ class VpnSession(Base):
     @property
     def moonlight_ready(self) -> bool:
         return self.vpn_online and self.sunshine_paired
+
+
+class SessionBillingEvent(Base):
+    __tablename__ = "session_billing_events"
+    __table_args__ = (
+        Index("ix_session_billing_events_user_day", "user_id", "billing_day"),
+        Index("ix_session_billing_events_session", "session_id"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("vpn_sessions.id", ondelete="SET NULL"))
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id", ondelete="SET NULL"))
+    billing_day = Column(Date, nullable=False)
+    tier = Column(String, nullable=False)
+    charged_minutes = Column(Integer, nullable=False, default=0)
+    free_minutes = Column(Integer, nullable=False, default=0)
+    amount = Column(BigInteger, nullable=False, default=0)
+    event_type = Column(String, nullable=False, default="charge")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    session = relationship("VpnSession", back_populates="billing_events")
 
 
 class MachineLog(Base):
