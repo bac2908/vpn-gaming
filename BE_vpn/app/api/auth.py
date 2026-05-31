@@ -47,6 +47,15 @@ def change_password(payload: schemas.ChangePasswordRequest, auth_service: AuthSe
     return auth_service.change_password(payload)
 
 
+@router.post("/set-password", response_model=schemas.UserOut)
+def set_password(
+    payload: schemas.SetPasswordRequest,
+    current_user: models.User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    return auth_service.set_password(current_user, payload)
+
+
 @router.patch("/profile", response_model=schemas.UserOut)
 def update_profile(
     payload: schemas.UserProfileUpdateRequest,

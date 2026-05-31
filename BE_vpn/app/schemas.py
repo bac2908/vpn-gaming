@@ -34,9 +34,13 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class SetPasswordRequest(BaseModel):
+    new_password: str
+
+
 class UserProfileUpdateRequest(BaseModel):
     display_name: str | None = None
-    current_password: str
+    current_password: str | None = None
 
 
 class UserOut(BaseModel):
@@ -45,6 +49,7 @@ class UserOut(BaseModel):
     display_name: str | None = None
     role: str
     balance: int = 0  # Số dư tài khoản (VND)
+    has_password: bool = False
 
     class Config:
         orm_mode = True

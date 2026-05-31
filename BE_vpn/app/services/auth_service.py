@@ -31,6 +31,7 @@ class AuthService:
             display_name=user.display_name,
             role=user.role,
             balance=user.balance or 0,
+            has_password=bool(user.credential),
         )
 
     def build_auth_response(self, user: models.User) -> schemas.AuthResponse:
@@ -259,12 +260,24 @@ class AuthService:
         self.repo.commit()
         return {"message": "Doi mat khau thanh cong"}
 
-    def update_profile(self, user: models.User, payload: schemas.UserProfileUpdateRequest) -> schemas.UserOut:
-        if not user.credential:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay thong tin dang nhap")
+    def set_password(self, user: models.User, payload: schemas.SetPasswordRequest) -> schemas.UserOut:
+        if user.credential:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tai khoan da co mat khau")
 
-        if not security.verify_password(payload.current_password, user.credential.password_hash):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Mat khau hien tai khong dung")
+        if len(payload.new_password) > 72:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau toi da 72 ky tu")
+
+        new_hash = security.hash_password(payload.new_password)
+        self.repo.create_credential(user=user, password_hash=new_hash)
+        self.repo.commit()
+        return self.to_user_out(user)
+
+    def update_profile(self, user: models.User, payload: schemas.UserProfileUpdateRequest) -> schemas.UserOut:
+        if user.credential:
+            if not payload.current_password:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thieu mat khau hien tai")
+            if not security.verify_password(payload.current_password, user.credential.password_hash):
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Mat khau hien tai khong dung")
 
         if payload.display_name is not None:
             display_name = payload.display_name.strip()

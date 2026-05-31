@@ -35,6 +35,14 @@ export async function changePassword(email, old_password, new_password) {
     })
 }
 
+export async function setPassword(new_password, token) {
+    return request('/auth/set-password', {
+        method: 'POST',
+        body: { new_password },
+        token,
+    })
+}
+
 export async function updateProfile(payload, token) {
     return request('/auth/profile', {
         method: 'PATCH',
@@ -54,11 +62,13 @@ export async function logout(token) {
 export function normalizeUser(user, fallbackEmail) {
     if (!user) return null
     const email = user.email || fallbackEmail || 'unknown@example.com'
+    const hasPassword = typeof user.has_password === 'boolean' ? user.has_password : undefined
     return {
         id: user.id,
         email,
         name: user.display_name || user.name || email.split('@')[0] || 'User',
         role: user.role || 'user',
         balance: user.balance || 0,
+        has_password: hasPassword,
     }
 }

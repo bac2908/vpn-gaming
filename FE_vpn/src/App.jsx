@@ -16,7 +16,7 @@ import ForgotPassword from './pages/auth/ForgotPassword'
 import ResetPassword from './pages/auth/ResetPassword'
 import AdminLogin from './pages/auth/AdminLogin'
 import { createMomoPayment, getBalance } from './api/payments'
-import { changePassword, fetchMe, logout as logoutApi, normalizeUser, updateProfile } from './api/auth'
+import { changePassword, fetchMe, logout as logoutApi, normalizeUser, setPassword, updateProfile } from './api/auth'
 import { buildLoginRedirect, getSafeRedirect } from './utils/redirect'
 
 const DEFAULT_SESSION = {
@@ -89,6 +89,7 @@ function App() {
   const [topupError, setTopupError] = useState('')
   const [topupLoading, setTopupLoading] = useState(false)
   const [accountModal, setAccountModal] = useState(null)
+  const hasPasswordRefreshRef = useRef(false)
 
   useEffect(() => {
     if (token) {
@@ -166,6 +167,23 @@ function App() {
         setUser(null)
       })
   }, [token, user, storedEmail, setUser, setToken])
+
+  useEffect(() => {
+    if (!token || !user?.id) {
+      hasPasswordRefreshRef.current = false
+      return
+    }
+    if (user?.has_password !== undefined || hasPasswordRefreshRef.current) return
+    hasPasswordRefreshRef.current = true
+    fetchMe(token)
+      .then((data) => {
+        const normalized = normalizeUser(data, storedEmail || user?.email)
+        if (normalized) setUser(normalized)
+      })
+      .catch((err) => {
+        console.warn('Refresh user profile failed', err)
+      })
+  }, [token, user, storedEmail, setUser])
 
   // Refresh balance when needed
   const refreshBalance = useCallback(async () => {
@@ -268,6 +286,8 @@ function App() {
         open={accountModal === 'password'}
         onClose={() => setAccountModal(null)}
         user={user}
+        token={token}
+        onUpdated={(nextUser) => setUser(nextUser)}
       />
     </>
   )
@@ -625,11 +645,11 @@ function TopBar({ user, session, onTopup, onLogout, onProfile, onPassword }) {
                       Cập nhật thông tin
                     </button>
                     <button className="btn ghost" onClick={() => { onPassword(); setAccountOpen(false); }}>
-                      Đổi mật khẩu
+                      {user?.has_password === false ? 'Đặt mật khẩu đăng nhập' : 'Đổi mật khẩu'}
                     </button>
                   </div>
                   <div className="account-divider" />
-                  <div style={{ display: 'flex', width: '100%' }}>
+                  <div style={{ display: 'flex', inlineSize: '100%' }}>
                     <button className="btn-logout" onClick={() => { onLogout(); setAccountOpen(false); }}>
                       Đăng xuất
                     </button>
@@ -810,6 +830,7 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const hasPassword = user?.has_password !== false
 
   useEffect(() => {
     if (user?.name) {
@@ -857,16 +878,15 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
       setError('Tên hiển thị không được để trống')
       return
     }
-    if (!currentPassword) {
+    if (hasPassword && !currentPassword) {
       setError('Vui lòng nhập mật khẩu hiện tại để xác thực thay đổi')
       return
     }
     setLoading(true)
     try {
-      const updated = await updateProfile({
-        display_name: displayName.trim(),
-        current_password: currentPassword
-      }, token)
+      const payload = { display_name: displayName.trim() }
+      if (hasPassword) payload.current_password = currentPassword
+      const updated = await updateProfile(payload, token)
       const normalized = normalizeUser(updated, user.email)
       if (onUpdated && normalized) {
         onUpdated(normalized)
@@ -930,26 +950,32 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
             />
           </label>
 
-          <label className="field">
-            <span>Mật khẩu hiện tại (bắt buộc)</span>
-            <div className="password-field">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Nhập mật khẩu hiện tại của bạn"
-                required
-                disabled={loading}
-              />
-              <button
-                type="button"
-                className="toggle-visibility"
-                onClick={() => setShowPassword(!showPassword)}
-              >
-                {showPassword ? '🙈' : '👁'}
-              </button>
+          {hasPassword ? (
+            <label className="field">
+              <span>Mật khẩu hiện tại (bắt buộc)</span>
+              <div className="password-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Nhập mật khẩu hiện tại của bạn"
+                  required
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  className="toggle-visibility"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? '🙈' : '👁'}
+                </button>
+              </div>
+            </label>
+          ) : (
+            <div className="alert">
+              Bạn đang đăng nhập bằng Google, có thể đổi tên mà không cần mật khẩu.
             </div>
-          </label>
+          )}
 
           {error && <div className="alert error">{error}</div>}
           {success && <div className="alert success">{success}</div>}
@@ -966,7 +992,7 @@ function AccountSettingsModal({ open, onClose, user, token, onUpdated }) {
   )
 }
 
-function ChangePasswordModal({ open, onClose, user }) {
+function ChangePasswordModal({ open, onClose, user, token, onUpdated }) {
   const modalRef = useRef(null)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -977,6 +1003,7 @@ function ChangePasswordModal({ open, onClose, user }) {
   const [showOld, setShowOld] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const hasPassword = user?.has_password !== false
 
   useEffect(() => {
     setOldPassword('')
@@ -1022,7 +1049,7 @@ function ChangePasswordModal({ open, onClose, user }) {
     setError('')
     setSuccess('')
 
-    if (!oldPassword || !newPassword || !confirmPassword) {
+    if (!newPassword || !confirmPassword || (hasPassword && !oldPassword)) {
       setError('Vui lòng nhập đầy đủ thông tin')
       return
     }
@@ -1039,13 +1066,29 @@ function ChangePasswordModal({ open, onClose, user }) {
 
     setLoading(true)
     try {
-      await changePassword(user.email, oldPassword, newPassword)
-      setSuccess('Đổi mật khẩu thành công!')
+      if (hasPassword) {
+        await changePassword(user.email, oldPassword, newPassword)
+        setSuccess('Đổi mật khẩu thành công!')
+      } else {
+        if (!token) {
+          setError('Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.')
+          return
+        }
+        const updated = await setPassword(newPassword, token)
+        const normalized = normalizeUser(updated, user?.email)
+        if (onUpdated && normalized) {
+          onUpdated(normalized)
+        }
+        setSuccess('Đặt mật khẩu thành công!')
+      }
       setTimeout(() => {
         onClose()
       }, 1500)
     } catch (err) {
-      setError(err.message || 'Không thể đổi mật khẩu, vui lòng kiểm tra lại mật khẩu hiện tại')
+      const fallback = hasPassword
+        ? 'Không thể đổi mật khẩu, vui lòng kiểm tra lại mật khẩu hiện tại'
+        : 'Không thể đặt mật khẩu, vui lòng thử lại'
+      setError(err.message || fallback)
     } finally {
       setLoading(false)
     }
@@ -1064,7 +1107,7 @@ function ChangePasswordModal({ open, onClose, user }) {
     >
       <div className="modal" ref={modalRef}>
         <div className="modal-header">
-          <h3>Đổi mật khẩu</h3>
+          <h3>{hasPassword ? 'Đổi mật khẩu' : 'Đặt mật khẩu đăng nhập'}</h3>
           <button
             type="button"
             className="modal-close"
@@ -1077,26 +1120,34 @@ function ChangePasswordModal({ open, onClose, user }) {
           </button>
         </div>
         <form className="stack" onSubmit={handleSubmit}>
-          <label className="field">
-            <span>Mật khẩu hiện tại</span>
-            <div className="password-field">
-              <input
-                type={showOld ? 'text' : 'password'}
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                placeholder="Nhập mật khẩu hiện tại"
-                required
-                disabled={loading}
-              />
-              <button
-                type="button"
-                className="toggle-visibility"
-                onClick={() => setShowOld(!showOld)}
-              >
-                {showOld ? '🙈' : '👁'}
-              </button>
+          {!hasPassword && (
+            <div className="alert">
+              Bạn đang đăng nhập bằng Google. Hãy tạo mật khẩu mới để có thể đăng nhập bằng email/mật khẩu.
             </div>
-          </label>
+          )}
+
+          {hasPassword && (
+            <label className="field">
+              <span>Mật khẩu hiện tại</span>
+              <div className="password-field">
+                <input
+                  type={showOld ? 'text' : 'password'}
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="Nhập mật khẩu hiện tại"
+                  required
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  className="toggle-visibility"
+                  onClick={() => setShowOld(!showOld)}
+                >
+                  {showOld ? '🙈' : '👁'}
+                </button>
+              </div>
+            </label>
+          )}
 
           <label className="field">
             <span>Mật khẩu mới</span>
@@ -1146,7 +1197,9 @@ function ChangePasswordModal({ open, onClose, user }) {
           <div className="actions" style={{ justifyContent: 'flex-end', marginBlockStart: '10px' }}>
             <button type="button" className="btn ghost" onClick={onClose} disabled={loading}>Hủy</button>
             <button type="submit" className="btn primary" disabled={loading}>
-              {loading ? 'Đang đổi mật khẩu...' : 'Cập nhật mật khẩu'}
+              {loading
+                ? (hasPassword ? 'Đang đổi mật khẩu...' : 'Đang đặt mật khẩu...')
+                : (hasPassword ? 'Cập nhật mật khẩu' : 'Đặt mật khẩu')}
             </button>
           </div>
         </form>

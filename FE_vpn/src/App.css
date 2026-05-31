@@ -5726,6 +5726,11 @@ select:focus {
   cursor: pointer;
 }
 
+.sl-ping-all:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .sl-process-list {
   display: grid;
   gap: 10px;

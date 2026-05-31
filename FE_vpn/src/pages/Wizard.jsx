@@ -192,6 +192,7 @@ function Wizard({ ctx }) {
     const [downloadingOvpn, setDownloadingOvpn] = useState(false)
     const [checkingVpn, setCheckingVpn] = useState(false)
     const [pairingSunshine, setPairingSunshine] = useState(false)
+    const [checkingPingAll, setCheckingPingAll] = useState(false)
 
     const params = useMemo(() => new URLSearchParams(location.search), [location.search])
     const machineId = params.get('machineId')
@@ -375,6 +376,32 @@ function Wizard({ ctx }) {
         }
     }
 
+    const handleCheckPingAll = async () => {
+        if (loading) {
+            setError('Danh sách máy đang tải, vui lòng thử lại sau vài giây.')
+            return
+        }
+
+        setError('')
+        setActionMessage('Đang kiểm tra ping tất cả máy...')
+        setCheckingPingAll(true)
+        try {
+            const machineListData = await listMachines({ page: 1, page_size: 20, sort: 'best' }, ctx?.token)
+            const items = machineListData.items || []
+            setMachines(items)
+            setMachine((prev) => {
+                if (!prev?.id) return prev
+                const refreshed = items.find((item) => String(item.id) === String(prev.id))
+                return refreshed ? { ...prev, ...refreshed } : prev
+            })
+            setActionMessage('Đã cập nhật ping cho tất cả máy.')
+        } catch (err) {
+            setError(err.message || 'Không thể kiểm tra ping tất cả máy')
+        } finally {
+            setCheckingPingAll(false)
+        }
+    }
+
     const handleCopyIp = async () => {
         if (!session?.ip_address) {
             setError('Chưa có IP local để copy.')
@@ -447,16 +474,52 @@ function Wizard({ ctx }) {
         }
     }
 
+    const bootState = isActiveSession ? 'done' : booting ? 'active' : 'wait'
+    const bootTime = isActiveSession ? 'OK' : booting ? 'Đang khởi tạo' : '--:--:--'
+    const vpnState = vpnOnline ? 'done' : downloadingOvpn || checkingVpn ? 'active' : 'wait'
+    const vpnTime = vpnOnline
+        ? 'OK'
+        : downloadingOvpn
+            ? 'Đang tải'
+            : checkingVpn
+                ? 'Đang kiểm tra'
+                : '--:--:--'
+    const sunshineState = sunshinePaired ? 'done' : pairingSunshine ? 'active' : 'wait'
+    const sunshineTime = sunshinePaired ? 'OK' : pairingSunshine ? 'Đang ghép' : '--:--:--'
+    const moonlightState = moonlightReady ? 'done' : 'wait'
+    const moonlightTime = moonlightReady ? 'OK' : '--:--:--'
+
     const processRows = [
-        { title: 'Boot VM', desc: 'Khởi động máy ảo', time: isActiveSession ? 'OK' : '--:--:--', state: isActiveSession ? 'done' : machine ? 'active' : 'wait' },
-        { title: 'VPN routing', desc: 'Kết nối VPN và thiết lập route', time: vpnOnline ? 'OK' : isActiveSession ? 'Đang chờ' : '--:--:--', state: vpnOnline ? 'done' : isActiveSession ? 'active' : 'wait' },
-        { title: 'Sunshine pairing', desc: 'Ghép nối Sunshine', time: sunshinePaired ? 'OK' : '--:--:--', state: sunshinePaired ? 'done' : vpnOnline ? 'active' : 'wait' },
-        { title: 'Moonlight stream', desc: 'Sẵn sàng vào chơi', time: moonlightReady ? 'OK' : '--:--:--', state: moonlightReady ? 'done' : 'wait' },
+        { title: 'Boot VM', desc: 'Khởi động máy ảo', time: bootTime, state: bootState },
+        { title: 'VPN routing', desc: 'Kết nối VPN và thiết lập route', time: vpnTime, state: vpnState },
+        { title: 'Sunshine pairing', desc: 'Ghép nối Sunshine', time: sunshineTime, state: sunshineState },
+        { title: 'Moonlight stream', desc: 'Sẵn sàng vào chơi', time: moonlightTime, state: moonlightState },
     ]
     const logs = [
-        { time: formatLogTime(sessionStartedAt), subject: `VM ${machine?.code || 'cloud rig'}`, message: 'khởi động phiên', state: isActiveSession ? 'OK' : 'WAIT' },
-        { time: formatLogTime(sessionStartedAt), subject: 'VPN profile', message: 'cấp theo phiên hiện tại', state: isActiveSession ? 'OK' : 'WAIT' },
-        { time: formatLogTime(session?.updated_at || sessionStartedAt), subject: 'VPN route', message: 'kiểm tra kết nối', state: vpnOnline ? 'OK' : 'WAIT' },
+        {
+            time: formatLogTime(sessionStartedAt),
+            subject: `VM ${machine?.code || 'cloud rig'}`,
+            message: booting ? 'đang khởi động phiên' : 'khởi động phiên',
+            state: isActiveSession ? 'OK' : booting ? 'RUN' : 'WAIT',
+        },
+        {
+            time: formatLogTime(sessionStartedAt),
+            subject: 'VPN profile',
+            message: downloadingOvpn ? 'đang tải profile' : 'cấp theo phiên hiện tại',
+            state: downloadingOvpn ? 'RUN' : isActiveSession ? 'OK' : 'WAIT',
+        },
+        {
+            time: formatLogTime(session?.updated_at || sessionStartedAt),
+            subject: 'VPN route',
+            message: checkingVpn ? 'đang kiểm tra' : 'kiểm tra kết nối',
+            state: vpnOnline ? 'OK' : checkingVpn ? 'RUN' : 'WAIT',
+        },
+        {
+            time: formatLogTime(session?.updated_at || sessionStartedAt),
+            subject: 'Sunshine',
+            message: pairingSunshine ? 'đang ghép nối' : 'chờ ghép nối',
+            state: sunshinePaired ? 'OK' : pairingSunshine ? 'RUN' : 'WAIT',
+        },
     ]
 
     return (
@@ -599,7 +662,7 @@ function Wizard({ ctx }) {
                                         <p>{rig.gpu || 'Chưa cấu hình GPU'} - {rig.status || 'Chưa rõ trạng thái'}</p>
                                     </div>
                                     <em className={ping <= 55 ? 'text-green-400' : ping <= 70 ? 'text-yellow-400' : 'text-red-400'}>
-                                    <Wifi className="inline mr-1 h-4 w-4" /> {Number.isFinite(Number(ping)) ? `${ping} ms` : 'Chưa đo'}
+                                        <Wifi className="inline mr-1 h-4 w-4" /> {Number.isFinite(Number(ping)) ? `${ping} ms` : 'Chưa đo'}
                                     </em>
                                     <span className="sl-rig-radio">
                                         {selected ? <CheckCircle2 className="h-5 w-5 text-cyan-300" /> : <Circle className="h-5 w-5 text-slate-600" />}
@@ -608,8 +671,17 @@ function Wizard({ ctx }) {
                             )
                         })}
                     </div>
-                    <button type="button" className="sl-ping-all">
-                        <Wifi className="inline mr-2 h-4 w-4" /> Kiểm tra ping tất cả máy <RefreshCw className="inline ml-auto h-4 w-4" />
+                    <button
+                        type="button"
+                        className="sl-ping-all"
+                        onClick={handleCheckPingAll}
+                        disabled={checkingPingAll}
+                        aria-busy={checkingPingAll}
+                        title={checkingPingAll ? 'Đang kiểm tra ping' : 'Cập nhật ping cho tất cả máy'}
+                    >
+                        <Wifi className="inline mr-2 h-4 w-4" />
+                        {checkingPingAll ? 'Đang kiểm tra ping...' : 'Kiểm tra ping tất cả máy'}
+                        <RefreshCw className={`inline ml-auto h-4 w-4 ${checkingPingAll ? 'animate-spin' : ''}`} />
                     </button>
                 </div>
 
@@ -651,37 +723,37 @@ function Wizard({ ctx }) {
                             <strong>KIỂM TRA SẴN SÀNG</strong>
                         </div>
                         <div className="sl-ready-list">
-                            <div className={isActiveSession ? 'ready' : ''}>
+                            <div className={isActiveSession ? 'ready' : booting ? 'active' : ''}>
                                 <span className="sl-ready-icon"><Server className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
                                     <strong>VM {isActiveSession ? 'đang chạy' : 'chưa chạy'}</strong>
                                     <p className="sl-ready-desc">{isActiveSession ? 'Máy ảo đã khởi động thành công' : 'Chưa có phiên active'}</p>
                                 </div>
                                 <em className={`sl-ready-status ${isActiveSession ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                    {isActiveSession ? 'Sẵn sàng' : 'Chờ xử lý'}
-                                    {isActiveSession ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
+                                    {isActiveSession ? 'Sẵn sàng' : booting ? 'Đang khởi động' : 'Chờ xử lý'}
+                                    {isActiveSession ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : booting ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
                                 </em>
                             </div>
-                            <div className={vpnOnline ? 'ready' : isActiveSession ? 'active' : ''}>
+                            <div className={vpnOnline ? 'ready' : checkingVpn ? 'active' : ''}>
                                 <span className="sl-ready-icon"><ShieldCheck className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
                                     <strong>VPN {vpnOnline ? 'online' : 'chưa online'}</strong>
                                     <p className="sl-ready-desc">{vpnOnline ? 'Đã kết nối VPN thành công' : 'Đang kết nối VPN...'}</p>
                                 </div>
-                                <em className={`sl-ready-status ${vpnOnline ? 'text-emerald-400' : isActiveSession ? 'text-yellow-400' : 'text-slate-500'}`}>
-                                    {vpnOnline ? 'Sẵn sàng' : isActiveSession ? 'Đang kết nối' : 'Chờ xử lý'}
-                                    {vpnOnline ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : isActiveSession ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
+                                <em className={`sl-ready-status ${vpnOnline ? 'text-emerald-400' : checkingVpn ? 'text-yellow-400' : 'text-slate-500'}`}>
+                                    {vpnOnline ? 'Sẵn sàng' : checkingVpn ? 'Đang kết nối' : 'Chờ xử lý'}
+                                    {vpnOnline ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : checkingVpn ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
                                 </em>
                             </div>
-                            <div className={sunshinePaired ? 'ready' : vpnOnline ? 'active' : ''}>
+                            <div className={sunshinePaired ? 'ready' : pairingSunshine ? 'active' : ''}>
                                 <span className="sl-ready-icon"><Sun className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
                                     <strong>Sunshine {sunshinePaired ? 'đã pairing' : 'chờ pairing'}</strong>
                                     <p className="sl-ready-desc">{sunshinePaired ? 'Thiết bị đã được ghép nối' : 'Chờ ghép nối Sunshine'}</p>
                                 </div>
-                                <em className={`sl-ready-status ${sunshinePaired ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                    {sunshinePaired ? 'Sẵn sàng' : 'Chờ xử lý'}
-                                    {sunshinePaired ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
+                                <em className={`sl-ready-status ${sunshinePaired ? 'text-emerald-400' : pairingSunshine ? 'text-yellow-400' : 'text-slate-500'}`}>
+                                    {sunshinePaired ? 'Sẵn sàng' : pairingSunshine ? 'Đang ghép' : 'Chờ xử lý'}
+                                    {sunshinePaired ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : pairingSunshine ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
                                 </em>
                             </div>
                             <div className={moonlightReady ? 'ready' : ''}>

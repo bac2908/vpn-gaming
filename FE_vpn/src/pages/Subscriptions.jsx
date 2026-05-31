@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listPlans, purchasePlan, getMySubscription } from '../api/subscriptions'
-import { listMachines } from '../api/machines'
 
 const formatRate = (amount) => `${formatCurrency(amount)}/phút`
 
@@ -145,13 +144,6 @@ const COMPARISON_ROWS = [
     },
 ]
 
-const PAYG_INFO = {
-    title: 'Free / PAYG',
-    subtitle: 'Không phải gói dịch vụ',
-    description: 'Người mới nhận 15 phút miễn phí mỗi ngày trên máy Trial, sau đó tính tiền theo phút.',
-    highlights: ['15 phút miễn phí/ngày', 'Chơi máy Trial', 'PAYG tính theo phút'],
-}
-
 const getPlanKey = (plan = {}) => {
     const raw = `${plan.code || ''} ${plan.name || ''}`.toLowerCase()
     if (raw.includes('basic')) return 'basic'
@@ -207,8 +199,6 @@ function Subscriptions({ ctx }) {
     const balance = Number(ctx?.user?.balance || 0)
     const [plans, setPlans] = useState([])
     const [mySub, setMySub] = useState(null)
-    const [trialMachines, setTrialMachines] = useState([])
-    const [trialLoading, setTrialLoading] = useState(true)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [success, setSuccess] = useState('')
@@ -234,10 +224,9 @@ function Subscriptions({ ctx }) {
             setLoading(true)
             setError('')
             try {
-                const [plansResult, subResult, machinesResult] = await Promise.allSettled([
+                const [plansResult, subResult] = await Promise.allSettled([
                     listPlans(),
                     token ? getMySubscription(token) : Promise.resolve(null),
-                    listMachines({ page: 1, page_size: 120 }, token),
                 ])
                 if (cancelled) return
 
@@ -258,17 +247,9 @@ function Subscriptions({ ctx }) {
                     setMySub(subResult.value)
                 }
 
-                if (machinesResult.status === 'fulfilled') {
-                    const machineItems = machinesResult.value?.items || []
-                    const trialItems = machineItems.filter((machine) => machine?.trial_eligible)
-                    setTrialMachines(trialItems)
-                } else {
-                    setTrialMachines([])
-                }
             } finally {
                 if (!cancelled) {
                     setLoading(false)
-                    setTrialLoading(false)
                 }
             }
         }

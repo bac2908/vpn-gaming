@@ -49,7 +49,6 @@ const steps = [
 ]
 
 const formatVnd = (amount) => new Intl.NumberFormat('vi-VN').format(amount) + 'đ'
-const formatRate = (amount) => `${formatVnd(amount)}/phút`
 
 const formatQuota = (plan) => {
     if (plan?.data_limit_gb == null) return 'Không giới hạn'
@@ -134,18 +133,6 @@ const PLAN_CONTENT = {
     },
 }
 
-const PAYG_INFO = {
-    title: 'Free / PAYG',
-    subtitle: 'Không phải gói dịch vụ',
-    description: 'Người mới nhận 15 phút miễn phí mỗi ngày trên máy Trial, sau đó tính tiền theo phút.',
-    highlights: ['15 phút miễn phí/ngày', 'Chơi máy Trial', 'PAYG tính theo phút'],
-    rates: [
-        { gpu: 'RTX 3070', price: 80 },
-        { gpu: 'RTX 3080', price: 100 },
-        { gpu: 'RTX 4080', price: 140 },
-        { gpu: 'T4', price: 50 },
-    ],
-}
 
 const PLAN_ORDER = ['basic', 'pro', 'premium']
 
