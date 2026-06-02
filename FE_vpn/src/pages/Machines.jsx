@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listMachines, getMachine, startMachine, resumeMachine } from '../api/machines'
+import { listMachines, getMachine, resumeMachine } from '../api/machines'
 
 const MACHINE_CARD_IMAGES = [
     '/gpu-banner-1.png',
@@ -95,11 +95,15 @@ const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN').format(Number(
 const formatRate = (rate) => `${formatCurrency(rate)}/phút`
 const formatHourly = (amount) => `${formatCurrency(amount)}/giờ`
 const getStartLabel = (machine, isIdle) => {
-    if (!isIdle) return 'Máy đang bận'
-    if (machine.can_start) return 'Khởi tạo máy này'
+    if (!isIdle) {
+        if (machine.status === 'busy' || machine.status === 'running') return 'Đang chạy'
+        if (machine.status === 'suspended') return 'Cooldown'
+        return 'Máy đang bận'
+    }
+    if (machine.can_start) return 'Vào khởi tạo'
     const reason = String(machine.access_reason || '').toLowerCase()
     if (reason.includes('so du')) return 'Nạp tiền để chơi'
-    if (reason.includes('cooldown')) return 'Đang cooldown'
+    if (reason.includes('cooldown')) return 'Cooldown'
     return 'Nạp tiền để chơi'
 }
 
@@ -125,7 +129,7 @@ function Machines({ ctx }) {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
     const [page, setPage] = useState(1)
-    const [pageSize, setPageSize] = useState(12)
+    const [pageSize, setPageSize] = useState(20)
     const [total, setTotal] = useState(0)
     const [refreshKey, setRefreshKey] = useState(0)
     const [filters, setFilters] = useState({
@@ -134,7 +138,7 @@ function Machines({ ctx }) {
         minPing: '',
         maxPing: '',
         sort: 'best',
-        status: 'idle',
+        status: '',
     })
     const [detailOpen, setDetailOpen] = useState(false)
     const [detailLoading, setDetailLoading] = useState(false)
@@ -192,6 +196,22 @@ function Machines({ ctx }) {
         }
     }, [page, pageSize, filters, refreshKey, token])
 
+    useEffect(() => {
+        const refreshOnFocus = () => setRefreshKey((v) => v + 1)
+        const refreshOnVisible = () => {
+            if (document.visibilityState === 'visible') {
+                refreshOnFocus()
+            }
+        }
+
+        window.addEventListener('focus', refreshOnFocus)
+        document.addEventListener('visibilitychange', refreshOnVisible)
+        return () => {
+            window.removeEventListener('focus', refreshOnFocus)
+            document.removeEventListener('visibilitychange', refreshOnVisible)
+        }
+    }, [])
+
     const display = machines
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
     const navigate = useNavigate()
@@ -200,7 +220,7 @@ function Machines({ ctx }) {
         filters.gpu ||
         filters.minPing ||
         filters.maxPing ||
-        filters.status !== 'idle' ||
+        filters.status !== '' ||
         filters.sort !== 'best' ||
         pageSize !== 12
     )
@@ -217,22 +237,16 @@ function Machines({ ctx }) {
             minPing: '',
             maxPing: '',
             sort: 'best',
-            status: 'idle',
+            status: '',
         })
-        setPageSize(12)
+        setPageSize(20)
         setPage(1)
     }
 
-    const handleStart = async (machineId) => {
-        try {
-            setError('')
-            const session = await startMachine(machineId, token)
-            localStorage.setItem('active_session', JSON.stringify(session))
-            navigate(`/app/wizard?sessionId=${session.id}&machineId=${session.machine_id}`)
-            setRefreshKey((v) => v + 1)
-        } catch (err) {
-            setError(normalizeMachineActionError(err, 'Không thể bắt đầu phiên'))
-        }
+    const handleStart = (machineId) => {
+        setError('')
+        localStorage.removeItem('active_session')
+        navigate(`/app/wizard?machineId=${machineId}`)
     }
 
     const handleResume = async (machineId) => {
@@ -336,8 +350,8 @@ function Machines({ ctx }) {
                             value={filters.status}
                             onChange={(e) => updateFilter('status', e.target.value)}
                         >
-                            <option value="idle">Chỉ máy trống</option>
                             <option value="">Tất cả</option>
+                            <option value="idle">Chỉ máy trống</option>
                         </select>
                     </label>
                     <label className="field">
@@ -362,6 +376,7 @@ function Machines({ ctx }) {
                             <option value={8}>8</option>
                             <option value={12}>12</option>
                             <option value={16}>16</option>
+                            <option value={20}>20</option>
                         </select>
                     </label>
                 </div>
@@ -405,7 +420,7 @@ function Machines({ ctx }) {
                         ? getStartLabel(m, isIdle)
                         : primaryActionIsResume
                             ? 'Resume Snapshot'
-                            : '⚡ Start Now'
+                            : getStartLabel(m, isIdle)
 
                     let pingClass = 'ping-high'
                     let pingLabel = 'Chậm'
@@ -686,7 +701,7 @@ function Machines({ ctx }) {
 
                                     <div className="machine-detail-actions">
                                         <button className="btn primary" onClick={() => handleStart(machine.id)} disabled={!isIdle}>
-                                            Khởi tạo máy này
+                                            Vào khởi tạo
                                         </button>
                                         {lastSession && (
                                             <button className="btn secondary" onClick={() => handleResume(machine.id)} disabled={!isIdle}>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
     CheckCircle2,
@@ -75,11 +75,28 @@ const getCountryData = (region) => {
     return { flag: '🌐', code: null, name: region || 'Global', flagUrl: null }
 }
 
-const formatDurationFrom = (value) => {
+const MAX_VISIBLE_PLAY_SECONDS = 36 * 60 * 60
+
+const formatDurationFrom = (value, options = {}) => {
     if (!value) return '--:--:--'
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return '--:--:--'
     const totalSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+    if (options.maxSeconds && totalSeconds > options.maxSeconds) {
+        return options.staleLabel || '--:--:--'
+    }
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':')
+}
+
+const formatDurationBetween = (startValue, endValue) => {
+    if (!startValue || !endValue) return '--:--:--'
+    const start = new Date(startValue)
+    const end = new Date(endValue)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '--:--:--'
+    const totalSeconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000))
     const hours = Math.floor(totalSeconds / 3600)
     const minutes = Math.floor((totalSeconds % 3600) / 60)
     const seconds = totalSeconds % 60
@@ -94,6 +111,20 @@ const formatLogTime = (value) => {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
+        hour12: false,
+    }).format(date)
+}
+
+const formatDateTime = (value) => {
+    if (!value) return '--'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return '--'
+    return new Intl.DateTimeFormat('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
         hour12: false,
     }).format(date)
 }
@@ -127,6 +158,13 @@ const cockpitSteps = [
     { key: 'vpn', title: 'VPN route', label: 'Kết nối' },
     { key: 'moonlight', title: 'Moonlight', label: 'Vào chơi' },
 ]
+
+const initialLaunchFlow = {
+    machine: 'wait',
+    session: 'wait',
+    vpn: 'wait',
+    moonlight: 'wait',
+}
 
 function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSunshinePaired, pairingSunshine }) {
     const isPlay = type === 'play'
@@ -193,10 +231,42 @@ function Wizard({ ctx }) {
     const [checkingVpn, setCheckingVpn] = useState(false)
     const [pairingSunshine, setPairingSunshine] = useState(false)
     const [checkingPingAll, setCheckingPingAll] = useState(false)
+    const [launchFlow, setLaunchFlow] = useState(initialLaunchFlow)
+    const [launchLogs, setLaunchLogs] = useState([])
+    const [lastEndedSession, setLastEndedSession] = useState(null)
+    const launchTimersRef = useRef([])
 
     const params = useMemo(() => new URLSearchParams(location.search), [location.search])
     const machineId = params.get('machineId')
     const sessionId = params.get('sessionId')
+
+    const clearLaunchTimers = () => {
+        launchTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+        launchTimersRef.current = []
+    }
+
+    const scheduleLaunchStep = (delay, callback) => {
+        const timer = window.setTimeout(callback, delay)
+        launchTimersRef.current.push(timer)
+    }
+
+    const addLaunchLog = (subject, message, state = 'RUN') => {
+        setLaunchLogs((prev) => [
+            ...prev,
+            {
+                id: `${Date.now()}-${prev.length}`,
+                time: formatLogTime(new Date()),
+                subject,
+                message,
+                state,
+            },
+        ])
+    }
+
+    useEffect(() => () => {
+        launchTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+        launchTimersRef.current = []
+    }, [])
 
     useEffect(() => {
         let cancelled = false
@@ -210,18 +280,27 @@ function Wizard({ ctx }) {
                 if (raw) {
                     try {
                         sessionData = JSON.parse(raw)
+                        if (sessionData?.is_demo_launch) {
+                            localStorage.removeItem('active_session')
+                            sessionData = null
+                        }
                     } catch {
                         sessionData = null
                     }
                 }
-                if (!sessionData && ctx?.token) {
-                    sessionData = await getActiveSession(ctx.token)
-                    if (sessionData) localStorage.setItem('active_session', JSON.stringify(sessionData))
+                if (ctx?.token) {
+                    const activeFromServer = await getActiveSession(ctx.token)
+                    sessionData = activeFromServer || null
+                    if (sessionData) {
+                        localStorage.setItem('active_session', JSON.stringify(sessionData))
+                    } else {
+                        localStorage.removeItem('active_session')
+                    }
                 }
 
                 const machineListData = await listMachines({ page: 1, page_size: 20, sort: 'best' }, ctx?.token)
                 const items = machineListData.items || []
-                const resolvedMachineId = machineId || sessionData?.machine_id || items[0]?.id
+                const resolvedMachineId = sessionData?.machine_id || machineId || items[0]?.id
 
                 if (!cancelled) setMachines(items)
                 if (resolvedMachineId) {
@@ -248,45 +327,61 @@ function Wizard({ ctx }) {
 
     const isActiveSession = session?.status === 'active' && !session?.ended_at
     const vpnOnline = Boolean(session?.ip_address)
+    const vpnProfileDownloaded = Boolean(session?.vpn_profile_downloaded)
     const sunshinePaired = Boolean(session?.sunshine_paired)
     const moonlightReady = Boolean(session?.moonlight_ready || (vpnOnline && sunshinePaired))
     const sessionStartedAt = session?.started_at || session?.start_time || session?.created_at
-    const sessionDuration = isActiveSession ? formatDurationFrom(sessionStartedAt) : '--:--:--'
+    const playStartedAt = session?.billing_started_at || null
+    const sessionDuration = isActiveSession
+        ? playStartedAt
+            ? formatDurationFrom(playStartedAt, { maxSeconds: MAX_VISIBLE_PLAY_SECONDS, staleLabel: 'Phiên cũ' })
+            : moonlightReady
+                ? 'Đang đồng bộ'
+                : 'Chưa stream'
+        : '--:--:--'
     const activeSessionMatchesMachine = Boolean(session?.machine_id && machine?.id && String(session.machine_id) === String(machine.id))
     const currentMachineLabel = isActiveSession && activeSessionMatchesMachine ? 'MÁY ĐANG DÙNG' : machine ? 'MÁY ĐÃ CHỌN' : 'CHƯA CHỌN MÁY'
     const currentMachineState = isActiveSession && activeSessionMatchesMachine ? 'Đang chạy' : machine ? 'Sẵn sàng khởi tạo' : 'Chưa chọn máy'
     const machineVisualSrc = useMemo(() => getMachineVisual(machine, machines), [machine, machines])
     const gpuBrand = getGpuBrand(machine?.gpu)
-    const flowState = {
-        machine: Boolean(machine),
-        session: Boolean(isActiveSession),
-        vpn: vpnOnline,
-        moonlight: moonlightReady,
+    const userBalance = Number(ctx?.user?.balance || 0)
+    const selectedMachineRate = Number(machine?.play_rate_per_minute ?? machine?.base_rate_per_minute ?? 0)
+    const selectedMachineTrialRemaining = Number(machine?.trial_minutes_remaining || 0)
+    const selectedMachineHasTrial = Boolean(machine?.trial_eligible && selectedMachineTrialRemaining > 0)
+    const selectedMachineCanPay = selectedMachineRate <= 0 || userBalance >= selectedMachineRate
+    const selectedMachineIdle = machine?.status === 'idle'
+    const blockedByBalance = Boolean(machine && selectedMachineIdle && !selectedMachineHasTrial && !selectedMachineCanPay)
+    const canStartSelectedMachine = Boolean(
+        machine
+        && selectedMachineIdle
+        && machine.can_start !== false
+        && (selectedMachineHasTrial || selectedMachineCanPay)
+    )
+    const startBlockReason = blockedByBalance
+        ? `Số dư ${formatCurrency(userBalance)} chưa đủ để khởi tạo máy này. Cần tối thiểu ${formatCurrency(selectedMachineRate)} cho phút đầu tiên.`
+        : machine?.access_reason || ''
+    const stepStates = {
+        machine: launchFlow.machine !== 'wait' ? launchFlow.machine : machine ? 'done' : 'wait',
+        session: launchFlow.session !== 'wait' ? launchFlow.session : isActiveSession ? 'done' : booting ? 'active' : 'wait',
+        vpn: launchFlow.vpn !== 'wait' ? launchFlow.vpn : vpnOnline ? 'done' : checkingVpn || downloadingOvpn ? 'active' : 'wait',
+        moonlight: launchFlow.moonlight !== 'wait' ? launchFlow.moonlight : moonlightReady ? 'done' : pairingSunshine ? 'active' : 'wait',
     }
-    const currentStepIndex = moonlightReady ? 3 : vpnOnline ? 2 : isActiveSession ? 1 : machine ? 0 : -1
-    const normalizeError = (err, fallback) => {
-        const message = err?.message || fallback
-        const lower = message.toLowerCase()
-        if (lower.includes('so du')) return 'Số dư không đủ để chơi phút tiếp theo. Vui lòng nạp thêm tiền.'
-        if (lower.includes('membership')) return message
-        if (message.toLowerCase().includes('goi dich vu')) {
-            return 'Membership chỉ là quyền lợi giảm giá; bạn vẫn có thể khởi động cloud rig bằng số dư ví.'
-        }
-        if (message.toLowerCase().includes('phien active')) {
-            return 'Bạn đang có một phiên hoạt động. Hãy tiếp tục hoặc dừng phiên hiện tại trước.'
-        }
-        return message
+    const stepLabels = {
+        machine: stepStates.machine === 'done' ? 'Selected' : 'Chọn máy',
+        session: stepStates.session === 'done' ? 'Hoàn thành' : stepStates.session === 'active' ? 'Đang khởi động VM...' : 'Khởi động',
+        vpn: stepStates.vpn === 'done' ? 'Connected' : stepStates.vpn === 'active' ? (downloadingOvpn ? 'Đang tải VPN...' : 'Checking route...') : vpnProfileDownloaded ? 'Chờ OpenVPN' : 'Chờ tải VPN',
+        moonlight: stepStates.moonlight === 'done' ? 'Ready' : stepStates.moonlight === 'active' ? 'Waiting Sunshine...' : 'Vào chơi',
     }
-
     useEffect(() => {
-        if (!session?.id || !isActiveSession || !ctx?.token) return undefined
+        if (!session?.id || !isActiveSession || session?.is_demo_launch || !ctx?.token) return undefined
 
         let cancelled = false
         const tick = async () => {
             try {
+                const streamReady = Boolean(session?.moonlight_ready || (session?.ip_address && session?.sunshine_paired))
                 const updated = await heartbeatSession(
                     session.id,
-                    { connection_state: 'connected', stream_active: true },
+                    { connection_state: session?.ip_address ? 'connected' : 'idle', stream_active: streamReady },
                     ctx.token,
                 )
                 if (!cancelled) {
@@ -304,28 +399,89 @@ function Wizard({ ctx }) {
             cancelled = true
             window.clearInterval(timer)
         }
-    }, [session?.id, isActiveSession, ctx?.token])
+    }, [session?.id, session?.is_demo_launch, session?.ip_address, session?.sunshine_paired, session?.moonlight_ready, isActiveSession, ctx?.token])
 
     const handleBootSession = async () => {
         if (!machine?.id) {
             setError('Chưa chọn máy để khởi động.')
             return
         }
+        if (!canStartSelectedMachine) {
+            setError(startBlockReason || 'Máy chưa sẵn sàng để khởi tạo.')
+            if (blockedByBalance) ctx?.openTopup?.()
+            return
+        }
 
+        clearLaunchTimers()
         setError('')
         setActionMessage('')
         setBooting(true)
+        setDownloadingOvpn(false)
+        setCheckingVpn(false)
+        setPairingSunshine(false)
+        setLaunchLogs([])
+        setLastEndedSession(null)
+        setLaunchFlow({
+            machine: 'done',
+            session: 'active',
+            vpn: 'wait',
+            moonlight: 'wait',
+        })
+        addLaunchLog(`${machine.code || 'VN-01'} selected`, 'Cloud rig selected', 'OK')
+        addLaunchLog('Boot VM', 'Đang khởi động VM', 'RUN')
+        setActionMessage('Đang khởi động VM...')
+
         try {
-            const started = await startMachine(machine.id, ctx?.token)
-            setSession(started)
-            localStorage.setItem('active_session', JSON.stringify(started))
+            const [started] = await Promise.all([
+                startMachine(machine.id, ctx?.token),
+                new Promise((resolve) => window.setTimeout(resolve, 1200)),
+            ])
+            const startedWithUiState = {
+                ...started,
+                vpn_profile_downloaded: false,
+            }
+            setSession(startedWithUiState)
+            localStorage.setItem('active_session', JSON.stringify(startedWithUiState))
             setMachine((prev) => prev ? { ...prev, status: 'running' } : prev)
-            setActionMessage('Cloud rig đã boot. Tải VPN profile và kết nối để lấy IP local.')
-        } catch (err) {
-            setError(normalizeError(err, 'Không thể khởi động cloud rig'))
-        } finally {
             setBooting(false)
+            setLaunchFlow({
+                machine: 'done',
+                session: 'done',
+                vpn: 'wait',
+                moonlight: 'wait',
+            })
+            addLaunchLog('VM boot', 'VM boot successful', 'OK')
+            addLaunchLog('VPN profile', 'VPN profile created', 'OK')
+            addLaunchLog('VPN route', 'Waiting for user VPN import', 'WAIT')
+            setActionMessage('VM Online. Hãy tải VPN profile, import vào OpenVPN rồi bấm VPN đã kết nối.')
+        } catch (err) {
+            setBooting(false)
+            setLaunchFlow({
+                machine: 'done',
+                session: 'wait',
+                vpn: 'wait',
+                moonlight: 'wait',
+            })
+            addLaunchLog('Boot VM', 'VM boot failed', 'ERR')
+            setError(err.message || 'Không thể khởi động cloud rig')
         }
+    }
+
+    const handleSelectRig = (rigId) => {
+        clearLaunchTimers()
+        if (session?.is_demo_launch) {
+            localStorage.removeItem('active_session')
+            setSession(null)
+            setLaunchFlow(initialLaunchFlow)
+            setLaunchLogs([])
+            setLastEndedSession(null)
+            setBooting(false)
+            setCheckingVpn(false)
+            setPairingSunshine(false)
+            setActionMessage('')
+            setError('')
+        }
+        navigate(`/app/wizard?machineId=${rigId}`)
     }
 
     const handleDownloadOvpn = async () => {
@@ -337,6 +493,42 @@ function Wizard({ ctx }) {
         setError('')
         setActionMessage('')
         setDownloadingOvpn(true)
+        setLaunchFlow((prev) => ({ ...prev, vpn: 'active' }))
+        addLaunchLog('VPN profile', 'Downloading VPN profile', 'RUN')
+        if (session?.is_demo_launch) {
+            scheduleLaunchStep(700, () => {
+                const profile = [
+                    'client',
+                    'dev tun',
+                    'proto udp',
+                    'remote demo.vpn-gaming.local 1194',
+                    'resolv-retry infinite',
+                    'nobind',
+                    'persist-key',
+                    'persist-tun',
+                ].join('\n')
+                const blob = new Blob([profile], { type: 'application/x-openvpn-profile' })
+                const url = window.URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = `${machine?.code || 'vpn-gaming'}-${session.id}.ovpn`
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                window.URL.revokeObjectURL(url)
+
+                setSession((prev) => {
+                    const updated = { ...(prev || session), vpn_profile_downloaded: true, updated_at: new Date().toISOString() }
+                    localStorage.setItem('active_session', JSON.stringify(updated))
+                    return updated
+                })
+                setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
+                setDownloadingOvpn(false)
+                addLaunchLog('VPN profile', 'VPN profile downloaded', 'OK')
+                setActionMessage('Đã tải VPN profile. Import vào OpenVPN, kết nối xong rồi bấm VPN đã kết nối.')
+            })
+            return
+        }
         try {
             const { blob, filename } = await downloadOvpn(session.id, ctx?.token)
             const url = window.URL.createObjectURL(blob)
@@ -347,8 +539,17 @@ function Wizard({ ctx }) {
             link.click()
             link.remove()
             window.URL.revokeObjectURL(url)
+            setSession((prev) => {
+                if (!prev) return prev
+                const updated = { ...prev, vpn_profile_downloaded: true, updated_at: new Date().toISOString() }
+                localStorage.setItem('active_session', JSON.stringify(updated))
+                return updated
+            })
+            setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
+            addLaunchLog('VPN profile', 'VPN profile downloaded', 'OK')
             setActionMessage('Đã tải VPN profile cho phiên hiện tại.')
         } catch (err) {
+            setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
             setError(err.message || 'Không thể tải VPN profile')
         } finally {
             setDownloadingOvpn(false)
@@ -360,16 +561,50 @@ function Wizard({ ctx }) {
             setError('Chưa có phiên active để kiểm tra VPN.')
             return
         }
+        if (!session?.vpn_profile_downloaded) {
+            setError('Bạn cần tải VPN profile và import vào OpenVPN trước khi xác nhận kết nối.')
+            return
+        }
 
+        clearLaunchTimers()
         setError('')
         setActionMessage('')
         setCheckingVpn(true)
+        setLaunchFlow((prev) => ({ ...prev, vpn: 'active' }))
+        addLaunchLog('VPN route', 'Checking route', 'RUN')
+        if (session?.is_demo_launch) {
+            const localIp = machine?.ip_address || machine?.local_ip || '10.8.0.24'
+            setActionMessage('Đang kiểm tra route VPN...')
+            scheduleLaunchStep(900, () => {
+                addLaunchLog('VPN route', 'Assigning local IP', 'RUN')
+            })
+            scheduleLaunchStep(2000, () => {
+                setCheckingVpn(false)
+                setLaunchFlow((prev) => ({ ...prev, vpn: 'done', moonlight: 'wait' }))
+                setSession((prev) => {
+                    const updated = {
+                        ...(prev || session),
+                        ip_address: localIp,
+                        vpn_online: true,
+                        updated_at: new Date().toISOString(),
+                    }
+                    localStorage.setItem('active_session', JSON.stringify(updated))
+                    return updated
+                })
+                addLaunchLog('VPN route', 'VPN route established', 'OK')
+                setActionMessage(`VPN Online. IP local: ${localIp}. Bây giờ hãy mở Sunshine/Moonlight để pair.`)
+            })
+            return
+        }
         try {
             const checked = await checkVpnConnection(session.id, ctx?.token)
             setSession(checked)
             localStorage.setItem('active_session', JSON.stringify(checked))
+            setLaunchFlow((prev) => ({ ...prev, vpn: 'done' }))
+            addLaunchLog('VPN route', 'VPN route established', 'OK')
             setActionMessage(`VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}.`)
         } catch (err) {
+            setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
             setError(err.message || 'Không thể kiểm tra kết nối VPN')
         } finally {
             setCheckingVpn(false)
@@ -437,36 +672,93 @@ function Wizard({ ctx }) {
         setError('')
         setActionMessage('')
         setPairingSunshine(true)
+        setLaunchFlow((prev) => ({ ...prev, moonlight: 'active' }))
+        addLaunchLog('Sunshine', 'Waiting Sunshine', 'RUN')
+        if (session?.is_demo_launch) {
+            clearLaunchTimers()
+            setActionMessage('Đang pair Sunshine/Moonlight...')
+            scheduleLaunchStep(700, () => {
+                addLaunchLog('Moonlight', 'Pairing Moonlight', 'RUN')
+            })
+            scheduleLaunchStep(1400, () => {
+                addLaunchLog('Moonlight', 'Testing stream', 'RUN')
+            })
+            scheduleLaunchStep(2200, () => {
+                setPairingSunshine(false)
+                setLaunchFlow((prev) => ({ ...prev, moonlight: 'done' }))
+                setSession((prev) => {
+                    const updated = {
+                        ...(prev || session),
+                        sunshine_paired: true,
+                        moonlight_ready: true,
+                        updated_at: new Date().toISOString(),
+                    }
+                    localStorage.setItem('active_session', JSON.stringify(updated))
+                    return updated
+                })
+                addLaunchLog('Sunshine', 'Sunshine ready', 'OK')
+                addLaunchLog('Moonlight', 'Moonlight available', 'OK')
+                setActionMessage('Moonlight Ready. Phiên đã sẵn sàng chơi.')
+            })
+            return
+        }
         try {
             const paired = await markSunshinePaired(session.id, ctx?.token)
             setSession(paired)
             localStorage.setItem('active_session', JSON.stringify(paired))
+            setLaunchFlow((prev) => ({ ...prev, moonlight: 'done' }))
+            addLaunchLog('Sunshine', 'Sunshine ready', 'OK')
+            addLaunchLog('Moonlight', 'Moonlight available', 'OK')
             setActionMessage('Sunshine đã ghép pin. Phiên đã sẵn sàng chơi qua Moonlight.')
         } catch (err) {
+            setLaunchFlow((prev) => ({ ...prev, moonlight: 'wait' }))
             setError(err.message || 'Không thể cập nhật trạng thái Sunshine')
         } finally {
             setPairingSunshine(false)
         }
     }
 
-    const handleStopSession = async () => {
+    const handleStopSession = async (mode = 'stop') => {
         if (!session?.id) {
             setError('Chưa có phiên active để dừng.')
             return
         }
 
-        const confirmed = window.confirm('Bạn chắc chắn muốn dừng phiên hiện tại?')
+        const confirmed = window.confirm(
+            mode === 'snapshot'
+                ? 'Tạm dừng phiên và lưu snapshot nếu gói của bạn có quota?'
+                : 'Bạn chắc chắn muốn dừng phiên hiện tại?',
+        )
         if (!confirmed) return
 
+        clearLaunchTimers()
         setError('')
         setActionMessage('')
+        if (session?.is_demo_launch) {
+            localStorage.removeItem('active_session')
+            setSession(null)
+            setLaunchFlow(initialLaunchFlow)
+            setLaunchLogs([])
+            setBooting(false)
+            setCheckingVpn(false)
+            setPairingSunshine(false)
+            setMachine((prev) => prev ? { ...prev, status: 'available' } : prev)
+            setActionMessage('Đã dừng phiên mô phỏng. Máy đã sẵn sàng khởi tạo lại.')
+            return
+        }
+
         setStopping(true)
         try {
             const stopped = await stopSession(session.id, ctx?.token)
             localStorage.removeItem('active_session')
             setSession(stopped)
+            setLastEndedSession(stopped)
             setMachine((prev) => prev ? { ...prev, status: 'suspended', cooldown_until: stopped?.ended_at } : prev)
-            setActionMessage('Đã dừng phiên. Máy đã được trả về trạng thái trống.')
+            setActionMessage(
+                stopped?.snapshot_retained
+                    ? 'Đã tạm dừng phiên và lưu snapshot. Bạn có thể resume từ lịch sử hoặc danh sách máy.'
+                    : 'Đã dừng phiên. Máy đã được trả về trạng thái trống.',
+            )
         } catch (err) {
             setError(err.message || 'Không thể dừng phiên')
         } finally {
@@ -474,28 +766,37 @@ function Wizard({ ctx }) {
         }
     }
 
-    const bootState = isActiveSession ? 'done' : booting ? 'active' : 'wait'
-    const bootTime = isActiveSession ? 'OK' : booting ? 'Đang khởi tạo' : '--:--:--'
-    const vpnState = vpnOnline ? 'done' : downloadingOvpn || checkingVpn ? 'active' : 'wait'
+    const launchStarted = launchLogs.length > 0
+    const bootState = launchFlow.session !== 'wait' ? launchFlow.session : isActiveSession ? 'done' : booting ? 'active' : 'wait'
+    const bootTime = bootState === 'done' ? 'Hoàn thành' : bootState === 'active' ? 'Đang khởi động VM...' : '--:--:--'
+    const vpnState = launchFlow.vpn !== 'wait' ? launchFlow.vpn : vpnOnline ? 'done' : downloadingOvpn || checkingVpn ? 'active' : 'wait'
     const vpnTime = vpnOnline
-        ? 'OK'
+        ? 'Connected'
         : downloadingOvpn
-            ? 'Đang tải'
+            ? 'Đang tải profile'
             : checkingVpn
-                ? 'Đang kiểm tra'
-                : '--:--:--'
+                ? 'Checking route...'
+                : vpnProfileDownloaded
+                    ? 'Chờ kết nối'
+                    : isActiveSession
+                        ? 'Chờ tải VPN'
+                        : '--:--:--'
+    const vpnActiveDesc = downloadingOvpn ? 'Đang tải VPN profile...' : 'Checking route...'
+    const vpnWaitingDesc = vpnProfileDownloaded ? 'Đã tải profile, chờ OpenVPN kết nối' : isActiveSession ? 'Chờ tải VPN profile' : 'Kết nối VPN và thiết lập route'
+    const vpnDisplayTime = vpnState === 'done' ? 'Connected' : vpnState === 'active' ? vpnTime : vpnTime
     const sunshineState = sunshinePaired ? 'done' : pairingSunshine ? 'active' : 'wait'
-    const sunshineTime = sunshinePaired ? 'OK' : pairingSunshine ? 'Đang ghép' : '--:--:--'
-    const moonlightState = moonlightReady ? 'done' : 'wait'
-    const moonlightTime = moonlightReady ? 'OK' : '--:--:--'
+    const sunshineTime = sunshinePaired ? 'Ready' : pairingSunshine ? 'Waiting Sunshine...' : '--:--:--'
+    const moonlightState = launchFlow.moonlight !== 'wait' ? launchFlow.moonlight : moonlightReady ? 'done' : 'wait'
+    const moonlightTime = moonlightState === 'done' ? 'Ready' : moonlightState === 'active' ? 'Pairing Moonlight...' : '--:--:--'
 
     const processRows = [
-        { title: 'Boot VM', desc: 'Khởi động máy ảo', time: bootTime, state: bootState },
-        { title: 'VPN routing', desc: 'Kết nối VPN và thiết lập route', time: vpnTime, state: vpnState },
+        { title: 'Cloud Rig', desc: machine ? 'Selected' : 'Chưa chọn máy', time: machine ? 'Selected' : '--:--:--', state: machine ? 'done' : 'wait' },
+        { title: 'Boot VM', desc: bootState === 'active' ? 'Đang khởi động VM...' : 'Khởi động máy ảo', time: bootTime, state: bootState },
+        { title: 'VPN Route', desc: vpnState === 'active' ? vpnActiveDesc : vpnWaitingDesc, time: vpnDisplayTime, state: vpnState },
         { title: 'Sunshine pairing', desc: 'Ghép nối Sunshine', time: sunshineTime, state: sunshineState },
         { title: 'Moonlight stream', desc: 'Sẵn sàng vào chơi', time: moonlightTime, state: moonlightState },
     ]
-    const logs = [
+    const fallbackLogs = [
         {
             time: formatLogTime(sessionStartedAt),
             subject: `VM ${machine?.code || 'cloud rig'}`,
@@ -521,6 +822,16 @@ function Wizard({ ctx }) {
             state: sunshinePaired ? 'OK' : pairingSunshine ? 'RUN' : 'WAIT',
         },
     ]
+    const logs = launchStarted ? launchLogs : fallbackLogs
+    const playRate = Number(session?.play_rate_per_minute || machine?.play_rate_per_minute || machine?.base_rate_per_minute || 0)
+    const currentSessionCost = Number(session?.charged_amount || 0)
+    const snapshotLimit = Number(session?.snapshot_active_limit || machine?.snapshot_active_limit || 0)
+    const canRetainSnapshot = snapshotLimit > 0
+    const showRunningPanel = isActiveSession && moonlightReady
+    const endedSummary = !isActiveSession && lastEndedSession
+    const endedDuration = endedSummary
+        ? formatDurationBetween(endedSummary.started_at || endedSummary.created_at, endedSummary.ended_at || new Date())
+        : '--:--:--'
 
     return (
         <div className="session-launcher">
@@ -545,8 +856,13 @@ function Wizard({ ctx }) {
                     <h1>Đưa cloud rig vào <span>trạng thái chơi</span></h1>
                     <p>Boot máy, tải VPN profile, xác nhận route và pair Moonlight trong một flow duy nhất.</p>
                     <div className="gd-actions">
-                        <button className="btn primary" onClick={handleBootSession} disabled={booting || isActiveSession || !machine}>
-                            ▶ {booting ? 'Đang khởi tạo...' : isActiveSession ? 'Phiên đang chạy' : 'Khởi tạo phiên'}
+                        <button
+                            className="btn primary"
+                            onClick={handleBootSession}
+                            disabled={booting || isActiveSession || !machine || (!canStartSelectedMachine && !blockedByBalance)}
+                            title={startBlockReason}
+                        >
+                            ▶ {booting ? 'Đang khởi tạo...' : isActiveSession ? 'Phiên đang chạy' : blockedByBalance ? 'Nạp tiền để khởi tạo' : 'Khởi tạo phiên'}
                         </button>
                         <button className="btn ghost" onClick={() => navigate('/app/machines')}>Chọn máy khác</button>
                         {isActiveSession && (
@@ -600,7 +916,7 @@ function Wizard({ ctx }) {
                         <div><span>Trial</span><strong>{machine?.trial_eligible ? `${machine?.trial_minutes_remaining || 0} phút còn lại` : 'Không áp dụng'}</strong></div>
                         <div><span>Session ID</span><strong>{session?.id ? session.id.slice(0, 8) : '--'}</strong></div>
                         <div><span>IP Local</span><strong>{session?.ip_address || '--'}</strong></div>
-                        <div><span>Thời gian chạy</span><strong>{sessionDuration}</strong></div>
+                        <div><span>Thời gian chơi</span><strong>{sessionDuration}</strong></div>
                     </div>
                 </div>
             </section>
@@ -614,23 +930,30 @@ function Wizard({ ctx }) {
                 </div>
             )}
             {actionMessage && <div className="alert success">{actionMessage}</div>}
+            {blockedByBalance && !isActiveSession && (
+                <div className="alert info wizard-alert">
+                    <span>{startBlockReason}</span>
+                    <button type="button" className="btn secondary" onClick={() => ctx?.openTopup?.()}>Nạp tiền</button>
+                </div>
+            )}
 
             <section className="sl-stepper">
                 {cockpitSteps.map((step, index) => {
-                    const done = flowState[step.key]
-                    const active = index === currentStepIndex
-                    const locked = index > currentStepIndex
+                    const state = stepStates[step.key]
+                    const done = state === 'done'
+                    const active = state === 'active'
+                    const locked = state === 'wait'
                     return (
                         <div key={step.key} className={`sl-step ${done ? 'done' : ''} ${active ? 'active' : ''} ${locked ? 'locked' : ''}`}>
                             <span className="sl-step-number">{index + 1}</span>
                             <div className="sl-step-info">
                                 <strong>{step.title}</strong>
-                                <p className={active ? 'text-cyan-300' : ''}>{step.label}</p>
+                                <p className={active ? 'text-cyan-300' : done ? 'text-emerald-400' : ''}>{stepLabels[step.key] || step.label}</p>
                             </div>
                             <span className="sl-step-status-icon">
                                 {done && <CheckCircle2 className="h-5 w-5 text-emerald-400" />}
                                 {active && <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />}
-                                {locked && <Lock className="h-5 w-5 text-slate-500" />}
+                                {locked && (step.key === 'machine' ? <Circle className="h-5 w-5 text-slate-500" /> : <Lock className="h-5 w-5 text-slate-500" />)}
                             </span>
                         </div>
                     )
@@ -654,7 +977,7 @@ function Wizard({ ctx }) {
                                     type="button"
                                     key={rig.id}
                                     className={`sl-rig-option ${selected ? 'selected' : ''}`}
-                                    onClick={() => navigate(`/app/wizard?machineId=${rig.id}`)}
+                                    onClick={() => handleSelectRig(rig.id)}
                                 >
                                     <span>{country.flagUrl ? <img src={country.flagUrl} alt={country.name} /> : country.flag}</span>
                                     <div>
@@ -708,12 +1031,13 @@ function Wizard({ ctx }) {
                     </div>
                     <div className="sl-console">
                         {logs.map((line) => (
-                            <p key={`${line.subject}-${line.message}`}>
+                            <p key={line.id || `${line.subject}-${line.message}`}>
                                 <span className="log-time">[{line.time}]</span>{' '}
-                                <span className="log-highlight">{line.subject}</span> {line.message} ...{' '}
+                                <span className="log-highlight">{line.subject}</span> {line.message}{' '}
                                 <span className={line.state === 'OK' ? 'log-success' : ''}>{line.state}</span>
                             </p>
                         ))}
+                        {launchStarted && <p><span className="log-cursor">_</span></p>}
                     </div>
                 </div>
 
@@ -723,26 +1047,26 @@ function Wizard({ ctx }) {
                             <strong>KIỂM TRA SẴN SÀNG</strong>
                         </div>
                         <div className="sl-ready-list">
-                            <div className={isActiveSession ? 'ready' : booting ? 'active' : ''}>
+                            <div className={bootState === 'done' ? 'ready' : bootState === 'active' ? 'active' : ''}>
                                 <span className="sl-ready-icon"><Server className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
-                                    <strong>VM {isActiveSession ? 'đang chạy' : 'chưa chạy'}</strong>
-                                    <p className="sl-ready-desc">{isActiveSession ? 'Máy ảo đã khởi động thành công' : 'Chưa có phiên active'}</p>
+                                    <strong>{bootState === 'done' ? 'VM Online' : bootState === 'active' ? 'VM đang khởi động...' : 'VM chưa chạy'}</strong>
+                                    <p className="sl-ready-desc">{bootState === 'done' ? 'Máy ảo đã khởi động thành công' : bootState === 'active' ? 'Đang khởi động VM...' : 'Chưa có phiên active'}</p>
                                 </div>
-                                <em className={`sl-ready-status ${isActiveSession ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                    {isActiveSession ? 'Sẵn sàng' : booting ? 'Đang khởi động' : 'Chờ xử lý'}
-                                    {isActiveSession ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : booting ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
+                                <em className={`sl-ready-status ${bootState === 'done' ? 'text-emerald-400' : bootState === 'active' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                                    {bootState === 'done' ? 'Online' : bootState === 'active' ? 'Đang xử lý' : 'Chờ xử lý'}
+                                    {bootState === 'done' ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : bootState === 'active' ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
                                 </em>
                             </div>
-                            <div className={vpnOnline ? 'ready' : checkingVpn ? 'active' : ''}>
+                            <div className={vpnState === 'done' ? 'ready' : vpnState === 'active' ? 'active' : ''}>
                                 <span className="sl-ready-icon"><ShieldCheck className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
-                                    <strong>VPN {vpnOnline ? 'online' : 'chưa online'}</strong>
-                                    <p className="sl-ready-desc">{vpnOnline ? 'Đã kết nối VPN thành công' : 'Đang kết nối VPN...'}</p>
+                                    <strong>{vpnState === 'done' ? 'VPN Online' : vpnState === 'active' ? (downloadingOvpn ? 'Đang tải profile...' : 'Đang kiểm tra VPN...') : 'VPN chưa online'}</strong>
+                                    <p className="sl-ready-desc">{vpnState === 'done' ? 'Đã kết nối VPN thành công' : vpnState === 'active' ? (downloadingOvpn ? 'Tải file .ovpn về máy' : 'Checking route và cấp IP local') : vpnProfileDownloaded ? 'Đã tải profile, chờ OpenVPN kết nối' : 'Chưa tải VPN profile'}</p>
                                 </div>
-                                <em className={`sl-ready-status ${vpnOnline ? 'text-emerald-400' : checkingVpn ? 'text-yellow-400' : 'text-slate-500'}`}>
-                                    {vpnOnline ? 'Sẵn sàng' : checkingVpn ? 'Đang kết nối' : 'Chờ xử lý'}
-                                    {vpnOnline ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : checkingVpn ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
+                                <em className={`sl-ready-status ${vpnState === 'done' ? 'text-emerald-400' : vpnState === 'active' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                                    {vpnState === 'done' ? 'Online' : vpnState === 'active' ? 'Đang xử lý' : 'Chờ xử lý'}
+                                    {vpnState === 'done' ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : vpnState === 'active' ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
                                 </em>
                             </div>
                             <div className={sunshinePaired ? 'ready' : pairingSunshine ? 'active' : ''}>
@@ -756,15 +1080,15 @@ function Wizard({ ctx }) {
                                     {sunshinePaired ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : pairingSunshine ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
                                 </em>
                             </div>
-                            <div className={moonlightReady ? 'ready' : ''}>
+                            <div className={moonlightState === 'done' ? 'ready' : moonlightState === 'active' ? 'active' : ''}>
                                 <span className="sl-ready-icon"><Moon className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
-                                    <strong>Moonlight {moonlightReady ? 'sẵn sàng' : 'chưa sẵn sàng'}</strong>
-                                    <p className="sl-ready-desc">{moonlightReady ? 'Sẵn sàng truyền phát game' : 'Chưa thể stream'}</p>
+                                    <strong>{moonlightState === 'done' ? 'Moonlight sẵn sàng' : moonlightState === 'active' ? 'Moonlight đang pairing...' : 'Moonlight chưa sẵn sàng'}</strong>
+                                    <p className="sl-ready-desc">{moonlightState === 'done' ? 'Sẵn sàng truyền phát game' : moonlightState === 'active' ? 'Testing stream...' : 'Chưa thể stream'}</p>
                                 </div>
-                                <em className={`sl-ready-status ${moonlightReady ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                    {moonlightReady ? 'Sẵn sàng' : 'Chờ xử lý'}
-                                    {moonlightReady ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
+                                <em className={`sl-ready-status ${moonlightState === 'done' ? 'text-emerald-400' : moonlightState === 'active' ? 'text-yellow-400' : 'text-slate-500'}`}>
+                                    {moonlightState === 'done' ? 'Ready' : moonlightState === 'active' ? 'Đang xử lý' : 'Chờ xử lý'}
+                                    {moonlightState === 'done' ? <CheckCircle2 className="h-4 w-4 inline ml-1" /> : moonlightState === 'active' ? <Loader2 className="h-4 w-4 animate-spin inline ml-1" /> : <Circle className="h-4 w-4 inline ml-1" />}
                                 </em>
                             </div>
                         </div>
@@ -774,15 +1098,15 @@ function Wizard({ ctx }) {
                         <div>
                             <p className="sl-next-kicker">TIẾP THEO</p>
                             <h3>{vpnOnline ? 'Mở Moonlight' : 'Kết nối VPN'}</h3>
-                            <span>{vpnOnline ? 'Mở Sunshine để pair thiết bị rồi vào Moonlight.' : 'Tải VPN profile, import vào OpenVPN và quay lại xác nhận.'}</span>
+                            <span>{vpnOnline ? 'Mở Sunshine để pair thiết bị rồi vào Moonlight.' : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
                             <div className="gd-actions">
                                 {!vpnOnline && (
                                     <>
                                         <button type="button" className="btn secondary" onClick={handleDownloadOvpn} disabled={!isActiveSession || downloadingOvpn}>
                                             {downloadingOvpn ? 'Đang tải...' : 'Tải VPN'}
                                         </button>
-                                        <button type="button" className="btn primary" onClick={handleCheckVpnConnection} disabled={!isActiveSession || checkingVpn}>
-                                            {checkingVpn ? 'Đang kiểm tra...' : 'VPN đã kết nối'}
+                                        <button type="button" className="btn primary" onClick={handleCheckVpnConnection} disabled={!isActiveSession || checkingVpn || !vpnProfileDownloaded}>
+                                            {checkingVpn ? 'Đang kiểm tra...' : vpnProfileDownloaded ? 'VPN đã kết nối' : 'Chưa tải VPN'}
                                         </button>
                                     </>
                                 )}
@@ -806,6 +1130,100 @@ function Wizard({ ctx }) {
                     </div>
                 </div>
             </section>
+
+            {(showRunningPanel || endedSummary) && (
+                <section className={`sl-session-board ${showRunningPanel && !endedSummary ? 'single' : ''} ${endedSummary && !showRunningPanel ? 'single' : ''}`}>
+                    {showRunningPanel && (
+                        <div className="sl-session-card sl-session-running">
+                            <div className="sl-session-card-head">
+                                <div>
+                                    <p className="sl-next-kicker">PHIÊN CHƠI ĐANG DIỄN RA</p>
+                                    <h3>Kết nối Gaming VM</h3>
+                                </div>
+                                <span className="sl-session-live"><i className="status-dot" /> Đang chơi</span>
+                            </div>
+                            <div className="sl-session-metrics">
+                                <div>
+                                    <span>Máy chủ</span>
+                                    <strong>{machine?.code || 'Cloud rig'}</strong>
+                                </div>
+                                <div>
+                                    <span>Thời gian chơi</span>
+                                    <strong>{sessionDuration}</strong>
+                                </div>
+                                <div>
+                                    <span>Chi phí hiện tại</span>
+                                    <strong>{formatCurrency(currentSessionCost)}</strong>
+                                </div>
+                                <div>
+                                    <span>Đơn giá</span>
+                                    <strong>{formatRate(playRate)}</strong>
+                                </div>
+                            </div>
+                            <div className="sl-session-status-list">
+                                <span><CheckCircle2 className="h-4 w-4" /> VM Online</span>
+                                <span><CheckCircle2 className="h-4 w-4" /> VPN Connected</span>
+                                <span><CheckCircle2 className="h-4 w-4" /> Moonlight Ready</span>
+                            </div>
+                            <div className="gd-actions">
+                                <button type="button" className="btn primary outline-violet" onClick={() => setActiveGuide('play')}>
+                                    Mở Moonlight <ExternalLink className="h-4 w-4 inline ml-1" />
+                                </button>
+                                <button type="button" className="btn secondary" onClick={() => handleStopSession('snapshot')} disabled={stopping}>
+                                    {stopping ? 'Đang xử lý...' : 'Tạm dừng / lưu snapshot'}
+                                </button>
+                                <button type="button" className="btn danger" onClick={() => handleStopSession('stop')} disabled={stopping}>
+                                    {stopping ? 'Đang dừng...' : 'Dừng phiên'}
+                                </button>
+                            </div>
+                            <p className="sl-session-note">
+                                {canRetainSnapshot
+                                    ? `Gói hiện tại có thể giữ tối đa ${snapshotLimit} snapshot để resume phiên sau.`
+                                    : 'Gói hiện tại chưa có quota snapshot; dừng phiên sẽ không bảo đảm resume trạng thái game.'}
+                            </p>
+                        </div>
+                    )}
+
+                    {endedSummary && (
+                        <div className="sl-session-card sl-session-summary">
+                            <div className="sl-session-card-head">
+                                <div>
+                                    <p className="sl-next-kicker">KẾT THÚC PHIÊN</p>
+                                    <h3>Phiên chơi đã kết thúc</h3>
+                                </div>
+                                <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+                            </div>
+                            <div className="sl-session-metrics">
+                                <div>
+                                    <span>Thời gian chơi</span>
+                                    <strong>{endedDuration}</strong>
+                                </div>
+                                <div>
+                                    <span>Tổng chi phí</span>
+                                    <strong>{formatCurrency(endedSummary.charged_amount)}</strong>
+                                </div>
+                                <div>
+                                    <span>Trung bình</span>
+                                    <strong>{formatRate(endedSummary.play_rate_per_minute || playRate)}</strong>
+                                </div>
+                                <div>
+                                    <span>Snapshot</span>
+                                    <strong>{endedSummary.snapshot_retained ? 'Đã lưu' : 'Không lưu'}</strong>
+                                </div>
+                            </div>
+                            <div className="sl-summary-detail">
+                                <div><span>Máy chủ</span><strong>{machine?.code || endedSummary.machine_id || '--'}</strong></div>
+                                <div><span>Kết thúc lúc</span><strong>{formatDateTime(endedSummary.ended_at)}</strong></div>
+                                <div><span>Lý do</span><strong>{endedSummary.stop_reason || 'user_stopped'}</strong></div>
+                            </div>
+                            <div className="gd-actions">
+                                <button type="button" className="btn primary" onClick={() => navigate('/app/history')}>Xem lịch sử phiên</button>
+                                <button type="button" className="btn ghost" onClick={() => navigate('/app/machines')}>Chọn máy khác</button>
+                            </div>
+                        </div>
+                    )}
+                </section>
+            )}
 
             <section className="sl-tech-flow">
                 <div className="sl-flow-container">

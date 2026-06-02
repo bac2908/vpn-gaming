@@ -79,6 +79,45 @@ def test_payg_billing_stops_session_without_negative_balance() -> None:
     service.repo.set_machine_status.assert_called_once_with(machine, "idle")
 
 
+def test_billing_clamps_shifted_billing_start_to_session_start() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    now = datetime.utcnow()
+    started_at = now - timedelta(minutes=5)
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=uuid4(),
+        status="active",
+        ended_at=None,
+        started_at=started_at,
+        billing_tier="basic",
+        play_rate_per_minute=10,
+        billing_started_at=started_at - timedelta(hours=7),
+        charged_minutes=0,
+        charged_amount=0,
+        free_minutes_used=0,
+        trial_eligible=False,
+        last_billed_at=None,
+        disconnected_at=None,
+        grace_period_seconds=300,
+        max_session_seconds=14400,
+        idle_stop_seconds=900,
+        idle_warning_seconds=600,
+        last_stream_activity_at=started_at,
+    )
+    service.repo.get_daily_billing_totals.return_value = (0, 0)
+
+    changed = service._bill_session_until_now(session, user, now)
+
+    assert changed is True
+    assert session.charged_minutes == 5
+    assert session.charged_amount == 50
+    assert service._utc_naive(session.billing_started_at) == started_at
+    assert user.balance == 950
+
+
 def test_start_machine_allows_free_user_without_subscription() -> None:
     service = _service()
     user = SimpleNamespace(id=uuid4(), balance=0)
@@ -120,6 +159,9 @@ def test_start_machine_allows_free_user_without_subscription() -> None:
     kwargs = service.repo.create_active_session.call_args.kwargs
     assert kwargs["subscription_id"] is None
     assert kwargs["billing_tier"] == "free"
+    assert kwargs["billing_started_at"] is None
+    assert kwargs["billing_state"] == "waiting_stream"
+    assert kwargs["connection_state"] == "waiting_vpn"
     assert kwargs["play_rate_per_minute"] == 50
     assert kwargs["trial_eligible"] is True
 
@@ -163,6 +205,8 @@ def test_payg_allows_high_gpu_without_membership_when_balance_is_enough() -> Non
     assert result is session
     kwargs = service.repo.create_active_session.call_args.kwargs
     assert kwargs["billing_tier"] == "free"
+    assert kwargs["billing_started_at"] is None
+    assert kwargs["billing_state"] == "waiting_stream"
     assert kwargs["play_rate_per_minute"] == 250
     assert kwargs["trial_eligible"] is False
 
@@ -209,7 +253,82 @@ def test_membership_discounts_machine_payg_rate_without_unlocking_gpu() -> None:
     kwargs = service.repo.create_active_session.call_args.kwargs
     assert kwargs["subscription_id"] == subscription.id
     assert kwargs["billing_tier"] == "premium"
+    assert kwargs["billing_started_at"] is None
+    assert kwargs["billing_state"] == "waiting_stream"
     assert kwargs["play_rate_per_minute"] == 160
+
+
+def test_sunshine_pairing_starts_stream_billing() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    machine_id = uuid4()
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=machine_id,
+        status="active",
+        ended_at=None,
+        ip_address="10.8.0.24",
+        billing_tier="free",
+        play_rate_per_minute=50,
+        billing_started_at=None,
+        charged_minutes=0,
+        charged_amount=0,
+        free_minutes_used=0,
+        trial_eligible=False,
+        last_billed_at=None,
+    )
+    machine = SimpleNamespace(id=machine_id, code="VN-01", status="running")
+    service.repo.get_session_by_id.return_value = session
+    service.repo.get_machine_by_id.return_value = machine
+    service.repo.get_daily_billing_totals.return_value = (0, 0)
+    service.repo.has_session_log.return_value = False
+
+    result = service.mark_sunshine_paired(session.id, user)
+
+    assert result is session
+    assert session.billing_started_at is not None
+    assert session.last_billed_at == session.billing_started_at
+    assert session.lifecycle_state == "playing"
+    assert session.connection_state == "streaming"
+    assert session.billing_state == "charging"
+    messages = [call.kwargs["message"] for call in service.repo.add_session_log.call_args_list]
+    assert "sunshine_paired" in messages
+    assert "moonlight_ready" in messages
+    assert "billing_started" in messages
+
+
+def test_heartbeat_does_not_start_billing_before_stream() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=uuid4(),
+        status="active",
+        ended_at=None,
+        ip_address=None,
+        billing_tier="free",
+        play_rate_per_minute=50,
+        billing_started_at=None,
+        charged_minutes=0,
+        charged_amount=0,
+        free_minutes_used=0,
+        trial_eligible=False,
+        last_billed_at=None,
+    )
+    payload = SimpleNamespace(connection_state="connected", stream_active=False, bytes_up=None, bytes_down=None)
+    service.repo.get_session_by_id.return_value = session
+    service.repo.get_daily_billing_totals.return_value = (0, 0)
+
+    service.record_session_heartbeat(session.id, user, payload)
+
+    assert session.billing_started_at is None
+    assert session.lifecycle_state == "vm_running"
+    assert session.connection_state == "waiting_vpn"
+    assert session.billing_state == "waiting_stream"
 
 
 def test_grace_period_auto_stops_after_disconnect_window() -> None:
@@ -252,7 +371,7 @@ def test_grace_period_auto_stops_after_disconnect_window() -> None:
     assert changed is True
     assert session.status == "stopped"
     assert session.stop_reason == "connection_grace_expired"
-    assert session.ended_at == disconnected_at + timedelta(seconds=300)
+    assert service._utc_naive(session.ended_at) == disconnected_at + timedelta(seconds=300)
     service.repo.set_machine_status.assert_called_once_with(machine, "idle")
 
 
@@ -295,7 +414,7 @@ def test_max_session_duration_auto_stops() -> None:
 
     assert session.status == "stopped"
     assert session.stop_reason == "session_max_duration_reached"
-    assert session.ended_at == started_at + timedelta(seconds=120)
+    assert service._utc_naive(session.ended_at) == started_at + timedelta(seconds=120)
 
 
 def test_stop_session_puts_machine_into_cooldown() -> None:
@@ -343,6 +462,55 @@ def test_stop_session_puts_machine_into_cooldown() -> None:
     service.repo.set_machine_status.assert_called_once_with(machine, "suspended")
 
 
+def test_stop_pre_stream_session_releases_machine_immediately() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    machine_id = uuid4()
+    now = datetime.utcnow()
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=machine_id,
+        status="active",
+        ended_at=None,
+        started_at=now,
+        billing_tier="basic",
+        play_rate_per_minute=35,
+        billing_started_at=None,
+        charged_minutes=0,
+        charged_amount=0,
+        free_minutes_used=0,
+        trial_eligible=False,
+        last_billed_at=None,
+        disconnected_at=None,
+        connection_state="waiting_vpn",
+        lifecycle_state="vm_running",
+        billing_state="waiting_stream",
+        grace_period_seconds=300,
+        max_session_seconds=14400,
+        idle_stop_seconds=900,
+        idle_warning_seconds=600,
+        last_stream_activity_at=None,
+        cooldown_seconds=60,
+        snapshot_active_limit=0,
+        refunded_amount=0,
+    )
+    machine = SimpleNamespace(id=machine_id, status="running", cooldown_until=None)
+    service.repo.get_session_by_id.return_value = session
+    service.repo.get_machine_by_id.return_value = machine
+    service.repo.get_daily_billing_totals.return_value = (0, 0)
+
+    service.stop_user_session(session.id, user)
+
+    assert session.status == "stopped"
+    assert session.stop_reason == "user_stopped"
+    assert session.billing_started_at is None
+    assert session.charged_amount == 0
+    assert machine.cooldown_until is None
+    service.repo.set_machine_status.assert_called_once_with(machine, "idle")
+
+
 def test_failed_short_session_refunds_charged_amount() -> None:
     service = _service()
     user = SimpleNamespace(id=uuid4(), balance=0)
@@ -387,3 +555,32 @@ def test_failed_short_session_refunds_charged_amount() -> None:
     assert session.refunded_amount == 70
     assert user.balance == 70
     assert service.repo.add_billing_event.call_args.kwargs["event_type"] == "refund"
+
+
+def test_finish_session_clamps_timezone_shifted_end_time() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    machine_id = uuid4()
+    started_at = datetime.utcnow().replace(tzinfo=None) + timedelta(hours=7)
+    ended_at = started_at - timedelta(hours=6)
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=machine_id,
+        status="active",
+        ended_at=None,
+        started_at=started_at.replace(tzinfo=None),
+        billing_started_at=None,
+        disconnected_at=None,
+        cooldown_seconds=0,
+        snapshot_active_limit=0,
+        refunded_amount=0,
+    )
+    machine = SimpleNamespace(id=machine_id, status="running", cooldown_until=None)
+    service.repo.get_machine_by_id.return_value = machine
+
+    service._finish_session(session, ended_at, "user_stopped", current_user=user)
+
+    assert session.status == "stopped"
+    assert service._utc_naive(session.ended_at) == service._utc_naive(session.started_at) + timedelta(seconds=1)

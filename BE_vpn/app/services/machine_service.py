@@ -16,6 +16,11 @@ from app.pricing import (
     get_plan_policy,
 )
 from app.repositories.machine_repository import MachineRepository
+from app.services.infrastructure_adapters import (
+    SimulatedStreamingProvider,
+    SimulatedVmProvider,
+    SimulatedVpnProvider,
+)
 
 
 RUNNING_MACHINE_STATUSES = {"running", "busy"}
@@ -25,6 +30,9 @@ REFUND_WINDOW_SECONDS = 2 * 60
 class MachineService:
     def __init__(self, db):
         self.repo = MachineRepository(db)
+        self.vm_provider = SimulatedVmProvider()
+        self.vpn_provider = SimulatedVpnProvider()
+        self.streaming_provider = SimulatedStreamingProvider()
 
     def list_machines(
         self,
@@ -45,7 +53,7 @@ class MachineService:
             )
 
         try:
-            if self.repo.release_expired_machine_cooldowns(datetime.utcnow()):
+            if self.repo.release_expired_machine_cooldowns(self._utc_now()):
                 self.repo.commit()
             items, total = self.repo.list_machines(
                 page=page,
@@ -254,9 +262,10 @@ class MachineService:
             subscription_id=subscription.id if subscription else None,
             billing_tier=policy.code,
             play_rate_per_minute=effective_rate,
-            billing_started_at=now,
-            lifecycle_state="running",
-            billing_state="trial" if trial_eligible else "charging",
+            billing_started_at=None,
+            lifecycle_state="provisioning",
+            billing_state="waiting_stream",
+            connection_state="waiting_vpn",
             max_session_seconds=policy.max_session_seconds,
             grace_period_seconds=policy.grace_period_seconds,
             idle_warning_seconds=policy.idle_warning_seconds,
@@ -271,6 +280,56 @@ class MachineService:
         self.repo.set_machine_status(machine, "running")
         return session
 
+    def _log_once(self, session: models.VpnSession, message: str, level: str = "info") -> bool:
+        if not getattr(session, "id", None) or not getattr(session, "machine_id", None):
+            return False
+        if self.repo.has_session_log(session.id, message):
+            return False
+        self.repo.add_session_log(
+            machine_id=session.machine_id,
+            session_id=session.id,
+            message=message,
+            level=level,
+        )
+        return True
+
+    def _provision_session_for_launch(self, machine: models.Machine, session: models.VpnSession) -> None:
+        vm_result = self.vm_provider.start_machine(machine, session)
+        session.lifecycle_state = "vm_running"
+        session.connection_state = "waiting_vpn"
+        session.billing_state = "waiting_stream"
+        session.last_client_heartbeat_at = None
+        session.last_stream_activity_at = None
+        self._log_once(session, f"vm_provider:{vm_result.provider}")
+        self._log_once(session, "vm_running")
+        self._log_once(session, "vpn_profile_pending")
+        self.repo.db.add(session)
+
+    def _start_stream_billing(
+        self,
+        session: models.VpnSession,
+        current_user: models.User,
+        now: datetime,
+    ) -> None:
+        now = self._utc_aware(now) or self._utc_now()
+        billing_started = not getattr(session, "billing_started_at", None)
+        if billing_started:
+            session.billing_started_at = now
+            session.last_billed_at = now
+        session.last_client_heartbeat_at = now
+        session.last_stream_activity_at = now
+        session.disconnected_at = None
+        session.idle_warning_at = None
+        session.connection_state = "streaming"
+        session.lifecycle_state = "playing"
+        session.billing_state = "trial" if getattr(session, "trial_eligible", False) else "charging"
+        if billing_started:
+            self._log_once(session, "billing_started")
+        self.repo.db.add(session)
+
+    def _utc_now(self) -> datetime:
+        return datetime.now(timezone.utc)
+
     def _utc_naive(self, value: datetime | None) -> datetime | None:
         if value is None:
             return None
@@ -278,15 +337,46 @@ class MachineService:
             return value
         return value.astimezone(timezone.utc).replace(tzinfo=None)
 
+    def _utc_aware(self, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def _billing_start_naive(self, session: models.VpnSession) -> datetime | None:
+        started_at = self._utc_naive(getattr(session, "started_at", None))
+        billing_started_at = self._utc_naive(getattr(session, "billing_started_at", None))
+        if billing_started_at and started_at and billing_started_at < started_at:
+            return started_at
+        return billing_started_at or started_at
+
+    def _normalize_shifted_billing_start(self, session: models.VpnSession) -> bool:
+        started_at = self._utc_naive(getattr(session, "started_at", None))
+        billing_started_at = self._utc_naive(getattr(session, "billing_started_at", None))
+        if not started_at or not billing_started_at or billing_started_at >= started_at:
+            return False
+        if int(getattr(session, "charged_minutes", 0) or 0) or int(getattr(session, "free_minutes_used", 0) or 0):
+            return False
+
+        normalized_start = self._utc_aware(getattr(session, "started_at", None)) or self._utc_now()
+        session.billing_started_at = normalized_start
+        last_billed_at = self._utc_naive(getattr(session, "last_billed_at", None))
+        if last_billed_at is None or last_billed_at < started_at:
+            session.last_billed_at = normalized_start
+        self.repo.db.add(session)
+        return True
+
     def _seconds_until(self, value: datetime | None) -> int:
         target = self._utc_naive(value)
         if target is None:
             return 0
-        return max(0, int((target - datetime.utcnow()).total_seconds()))
+        now = self._utc_naive(self._utc_now()) or datetime.utcnow()
+        return max(0, int((target - now).total_seconds()))
 
     def _session_stop_candidate(self, session: models.VpnSession, now: datetime) -> tuple[datetime | None, str | None]:
         candidates: list[tuple[datetime, str]] = []
-        started_at = self._utc_naive(getattr(session, "started_at", None)) or self._utc_naive(getattr(session, "billing_started_at", None))
+        started_at = self._billing_start_naive(session)
         max_session_seconds = int(getattr(session, "max_session_seconds", 0) or 0)
         if started_at and max_session_seconds > 0:
             max_stop_at = started_at + timedelta(seconds=max_session_seconds)
@@ -317,6 +407,9 @@ class MachineService:
 
         next_state = "running"
         next_connection_state = "connected"
+        if getattr(session, "billing_started_at", None):
+            next_state = "playing"
+            next_connection_state = "streaming"
         disconnected_at = self._utc_naive(getattr(session, "disconnected_at", None))
         if disconnected_at:
             next_state = "grace_disconnected"
@@ -347,7 +440,7 @@ class MachineService:
         return changed
 
     def _billing_cutoff_for_counted_minutes(self, session: models.VpnSession, counted_minutes: int) -> datetime:
-        started_at = self._utc_naive(getattr(session, "billing_started_at", None)) or datetime.utcnow()
+        started_at = self._billing_start_naive(session) or self._utc_naive(self._utc_now()) or datetime.utcnow()
         return started_at + timedelta(minutes=max(0, counted_minutes))
 
     def _bill_session_until_now(
@@ -361,12 +454,13 @@ class MachineService:
         if not session.billing_tier or not session.billing_started_at:
             return False
 
-        now = self._utc_naive(now or datetime.utcnow()) or datetime.utcnow()
+        now = self._utc_naive(now or self._utc_now()) or datetime.utcnow()
         policy_stop_at, policy_stop_reason = self._session_stop_candidate(session, now)
         bill_until = policy_stop_at or now
-        changed = self._refresh_lifecycle_state(session, bill_until)
+        changed = self._normalize_shifted_billing_start(session)
+        changed = self._refresh_lifecycle_state(session, bill_until) or changed
 
-        billing_started_at = self._utc_naive(session.billing_started_at) or bill_until
+        billing_started_at = self._billing_start_naive(session) or bill_until
         elapsed_seconds = max(0, int((bill_until - billing_started_at).total_seconds()))
         target_total_minutes = ceil(elapsed_seconds / 60) if elapsed_seconds > 0 else 0
         already_counted = int(session.charged_minutes or 0) + int(session.free_minutes_used or 0)
@@ -467,6 +561,14 @@ class MachineService:
         if session.status != "active" or session.ended_at is not None:
             return
 
+        ended_at = self._utc_aware(ended_at) or datetime.now(timezone.utc)
+        started_floor = (
+            self._utc_aware(getattr(session, "started_at", None))
+            or self._utc_aware(getattr(session, "billing_started_at", None))
+        )
+        if started_floor and ended_at <= started_floor:
+            ended_at = started_floor + timedelta(seconds=1)
+
         session.status = terminal_status
         session.ended_at = ended_at
         session.stop_reason = reason
@@ -513,6 +615,8 @@ class MachineService:
         if not machine or machine.status not in RUNNING_MACHINE_STATUSES:
             return
         cooldown_seconds = int(getattr(session, "cooldown_seconds", 0) or 0)
+        if not getattr(session, "billing_started_at", None):
+            cooldown_seconds = 0
         if cooldown_seconds > 0:
             machine.cooldown_until = ended_at + timedelta(seconds=cooldown_seconds)
             self.repo.set_machine_status(machine, "suspended")
@@ -527,10 +631,11 @@ class MachineService:
         reason: str,
         current_user: models.User | None = None,
     ) -> None:
-        started_at = self._utc_naive(getattr(session, "started_at", None)) or self._utc_naive(getattr(session, "billing_started_at", None))
+        started_at = self._billing_start_naive(session)
         if not started_at:
             return
-        duration_seconds = max(0, int((ended_at - started_at).total_seconds()))
+        ended_at_naive = self._utc_naive(ended_at) or self._utc_naive(self._utc_now()) or datetime.utcnow()
+        duration_seconds = max(0, int((ended_at_naive - started_at).total_seconds()))
         refundable = int(getattr(session, "charged_amount", 0) or 0) - int(getattr(session, "refunded_amount", 0) or 0)
         if duration_seconds >= REFUND_WINDOW_SECONDS or refundable <= 0:
             return
@@ -560,7 +665,7 @@ class MachineService:
 
     def bill_all_active_sessions(self) -> int:
         changed_count = 0
-        if self.repo.release_expired_machine_cooldowns(datetime.utcnow()):
+        if self.repo.release_expired_machine_cooldowns(self._utc_now()):
             changed_count += 1
         for session in self.repo.list_active_billable_sessions():
             if self._bill_session_until_now(session):
@@ -598,15 +703,17 @@ class MachineService:
         machines_map = self.repo.get_machines_by_ids(machine_ids)
         latest_ended_map = self.repo.get_latest_ended_session_ids_for_user(current_user.id, machine_ids)
         has_active_session = self.repo.get_active_session_for_user(current_user.id) is not None
-        now = datetime.utcnow()
+        now = self._utc_naive(self._utc_now()) or datetime.utcnow()
 
         result_items: list[schemas.SessionHistoryItemOut] = []
         for item in items:
             machine = machines_map.get(item.machine_id) if item.machine_id else None
             duration_seconds = None
             if item.started_at:
-                end_time = item.ended_at or now
-                duration_seconds = max(0, int((end_time - item.started_at).total_seconds()))
+                start_time = self._utc_naive(item.started_at)
+                end_time = self._utc_naive(item.ended_at) or now
+                if start_time:
+                    duration_seconds = max(0, int((end_time - start_time).total_seconds()))
 
             can_resume = (
                 not has_active_session
@@ -656,7 +763,7 @@ class MachineService:
         if not machine:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay may")
 
-        now = datetime.utcnow()
+        now = self._utc_naive(self._utc_now()) or datetime.utcnow()
         self._ensure_machine_available(machine, now)
         subscription, policy = self._ensure_session_can_start(machine, current_user)
         if self._active_session_count_for_user(current_user) >= policy.max_concurrent_sessions:
@@ -666,6 +773,7 @@ class MachineService:
             )
 
         session = self._create_session_for_policy(machine, current_user, subscription, policy, now)
+        self._provision_session_for_launch(machine, session)
         self.repo.commit()
         self.repo.refresh(session)
         self._attach_session_billing_view(session, current_user)
@@ -682,7 +790,7 @@ class MachineService:
 
         self._bill_session_until_now(session, current_user)
         if session.status == "active" and session.ended_at is None:
-            self._finish_session(session, datetime.utcnow(), "user_stopped", current_user=current_user)
+            self._finish_session(session, self._utc_now(), "user_stopped", current_user=current_user)
 
         self.repo.commit()
         self.repo.refresh(session)
@@ -710,6 +818,13 @@ class MachineService:
         if not machine:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay may")
 
+        profile_result = self.vpn_provider.create_profile(machine, session)
+        self._log_once(session, f"vpn_provider:{profile_result.provider}")
+        self._log_once(session, "vpn_profile_generated")
+        self.repo.db.add(session)
+        self.repo.commit()
+        self.repo.refresh(session)
+
         filename = self._ovpn_filename(machine, session)
         content = self._render_ovpn_profile(machine, session, current_user)
         return filename, content
@@ -726,14 +841,27 @@ class MachineService:
         self._bill_session_until_now(session, current_user)
         if session.status != "active" or session.ended_at is not None:
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Phien da dung do het so du.")
+        if not session.machine_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session chua gan may")
+        machine = self.repo.get_machine_by_id(session.machine_id)
+        if not machine:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay may")
+
+        vpn_result = self.vpn_provider.check_connection(machine, session)
         if not session.ip_address:
-            session.ip_address = self._session_local_ip(session)
-        now = datetime.utcnow()
+            session.ip_address = vpn_result.ip_address or self._session_local_ip(session)
+        now = self._utc_now()
         session.last_client_heartbeat_at = now
-        session.last_stream_activity_at = now
         session.disconnected_at = None
-        session.connection_state = "connected"
-        session.lifecycle_state = "running"
+        if getattr(session, "billing_started_at", None):
+            session.connection_state = "streaming"
+            session.lifecycle_state = "playing"
+        else:
+            session.connection_state = "vpn_connected"
+            session.lifecycle_state = "vpn_connected"
+            session.billing_state = "waiting_stream"
+        self._log_once(session, f"vpn_route_provider:{vpn_result.provider}")
+        self._log_once(session, "vpn_connected")
 
         self.repo.db.add(session)
         self.repo.commit()
@@ -753,22 +881,19 @@ class MachineService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session chua gan may")
         if not session.ip_address:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Can ket noi VPN truoc khi ghep Sunshine")
+        machine = self.repo.get_machine_by_id(session.machine_id)
+        if not machine:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay may")
 
         self._bill_session_until_now(session, current_user)
         if session.status != "active" or session.ended_at is not None:
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Phien da dung do het so du.")
-        now = datetime.utcnow()
-        session.last_client_heartbeat_at = now
-        session.last_stream_activity_at = now
-        session.disconnected_at = None
-        session.connection_state = "connected"
-        session.lifecycle_state = "running"
-        if not self.repo.has_session_log(session.id, "sunshine_paired"):
-            self.repo.add_session_log(
-                machine_id=session.machine_id,
-                session_id=session.id,
-                message="sunshine_paired",
-            )
+        now = self._utc_now()
+        stream_result = self.streaming_provider.mark_ready(machine, session)
+        self._start_stream_billing(session, current_user, now)
+        self._log_once(session, f"stream_provider:{stream_result.provider}")
+        self._log_once(session, "sunshine_paired")
+        self._log_once(session, "moonlight_ready")
 
         self.repo.commit()
         self.repo.refresh(session)
@@ -796,7 +921,7 @@ class MachineService:
             self._attach_session_billing_view(session, current_user)
             return session
 
-        now = datetime.utcnow()
+        now = self._utc_now()
         connection_state = payload.connection_state or "connected"
         session.last_client_heartbeat_at = now
         if payload.bytes_up is not None:
@@ -811,14 +936,35 @@ class MachineService:
             if not session.disconnected_at:
                 session.disconnected_at = now
         else:
-            session.connection_state = "idle" if connection_state == "idle" else "connected"
             session.disconnected_at = None
             if payload.stream_active:
-                session.last_stream_activity_at = now
-                session.idle_warning_at = None
-                session.lifecycle_state = "running"
+                if session.ip_address:
+                    if not getattr(session, "billing_started_at", None):
+                        self._start_stream_billing(session, current_user, now)
+                        self._log_once(session, "sunshine_paired")
+                        self._log_once(session, "moonlight_ready")
+                    else:
+                        session.last_stream_activity_at = now
+                        session.idle_warning_at = None
+                        session.connection_state = "streaming"
+                        session.lifecycle_state = "playing"
+                else:
+                    session.connection_state = "waiting_vpn"
+                    session.lifecycle_state = "vm_running"
+                    session.billing_state = "waiting_stream"
+            elif getattr(session, "billing_started_at", None):
+                session.connection_state = "idle" if connection_state == "idle" else "streaming"
+            elif session.ip_address:
+                session.connection_state = "vpn_connected"
+                session.lifecycle_state = "vpn_connected"
+                session.billing_state = "waiting_stream"
+            else:
+                session.connection_state = "waiting_vpn"
+                session.lifecycle_state = "vm_running"
+                session.billing_state = "waiting_stream"
 
-        self._refresh_lifecycle_state(session, now)
+        if getattr(session, "billing_started_at", None):
+            self._refresh_lifecycle_state(session, now)
         self.repo.db.add(session)
         self.repo.commit()
         self.repo.refresh(session)
@@ -833,7 +979,7 @@ class MachineService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session khong dang active")
         self._bill_session_until_now(session)
         if session.status == "active" and session.ended_at is None:
-            self._finish_session(session, datetime.utcnow(), "admin_stopped")
+            self._finish_session(session, self._utc_now(), "admin_stopped")
         self.repo.commit()
 
     def fail_session_as_admin(self, session_id: UUID, reason: str = "vm_failed") -> None:
@@ -844,7 +990,7 @@ class MachineService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session khong dang active")
         self._bill_session_until_now(session)
         if session.status == "active" and session.ended_at is None:
-            self._finish_session(session, datetime.utcnow(), reason or "vm_failed", terminal_status="failed")
+            self._finish_session(session, self._utc_now(), reason or "vm_failed", terminal_status="failed")
         self.repo.commit()
 
     def _ovpn_filename(self, machine: models.Machine, session: models.VpnSession) -> str:
@@ -917,7 +1063,7 @@ class MachineService:
         if not machine:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay may")
 
-        now = datetime.utcnow()
+        now = self._utc_naive(self._utc_now()) or datetime.utcnow()
         self._ensure_machine_available(machine, now)
         subscription, policy = self._ensure_session_can_start(machine, current_user)
         if self._active_session_count_for_user(current_user) >= policy.max_concurrent_sessions:
@@ -931,6 +1077,8 @@ class MachineService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chua co snapshot de tiep tuc")
 
         session = self._create_session_for_policy(machine, current_user, subscription, policy, now)
+        self._provision_session_for_launch(machine, session)
+        self._log_once(session, "snapshot_resumed")
         self.repo.commit()
         self.repo.refresh(session)
         self._attach_session_billing_view(session, current_user)

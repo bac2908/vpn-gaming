@@ -54,8 +54,8 @@ class MachineRepository:
             )
         else:
             query = query.order_by(
-                status_rank.asc(),
                 models.Machine.ping_ms.asc().nulls_last(),
+                status_rank.asc(),
                 gpu_rank.desc(),
                 models.Machine.region,
                 models.Machine.code,
@@ -317,6 +317,7 @@ class MachineRepository:
         billing_started_at=None,
         lifecycle_state: str = "running",
         billing_state: str = "free",
+        connection_state: str = "connected",
         max_session_seconds: int = 0,
         grace_period_seconds: int = 300,
         idle_warning_seconds: int = 600,
@@ -338,7 +339,7 @@ class MachineRepository:
             last_billed_at=billing_started_at,
             lifecycle_state=lifecycle_state,
             billing_state=billing_state,
-            connection_state="connected",
+            connection_state=connection_state,
             last_client_heartbeat_at=billing_started_at,
             last_stream_activity_at=billing_started_at,
             max_session_seconds=max_session_seconds,
@@ -357,6 +358,8 @@ class MachineRepository:
 
     def set_machine_status(self, machine: models.Machine, status: str) -> None:
         machine.status = status
+        if status == "idle":
+            machine.cooldown_until = None
         self.db.add(machine)
 
     def commit(self) -> None:

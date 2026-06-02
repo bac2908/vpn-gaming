@@ -59,6 +59,9 @@ def init_database():
                 UPDATE machines
                 SET trial_eligible = true
                 WHERE code IN (
+                    'VN-01',
+                    'VN-02',
+                    'SG-01',
                     'VN-TRIAL-HAN-3070',
                     'VN-TRIAL-HCM-3070',
                     'HK-TRIAL-3080-01',
