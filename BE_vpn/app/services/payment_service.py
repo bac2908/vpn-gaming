@@ -2,13 +2,14 @@ import hashlib
 import hmac
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 from fastapi import HTTPException, status
 
 from app import models, schemas
 from app.config import get_settings
+from app.pricing import billing_day
 from app.repositories.payment_repository import PaymentRepository
 
 
@@ -203,3 +204,43 @@ class PaymentService:
             status_filter=status_filter,
         )
         return schemas.TopupHistoryPage(items=items, total=total, page=page, page_size=page_size)
+
+    def get_topup_summary(self, current_user: models.User) -> schemas.TopupSummaryOut:
+        items = self.repo.list_user_topups_for_summary(current_user.id)
+        today = billing_day()
+        week_days = {today - timedelta(days=6 - idx) for idx in range(7)}
+
+        total_succeeded_amount = 0
+        pending_amount = 0
+        week_succeeded_amount = 0
+        succeeded_transactions = 0
+        pending_transactions = 0
+        failed_transactions = 0
+        latest_topup_at = None
+
+        for item in items:
+            if latest_topup_at is None or (item.created_at and item.created_at > latest_topup_at):
+                latest_topup_at = item.created_at
+
+            amount = int(item.amount or 0)
+            if item.status == "succeeded":
+                succeeded_transactions += 1
+                total_succeeded_amount += amount
+                if billing_day(item.completed_at or item.created_at) in week_days:
+                    week_succeeded_amount += amount
+            elif item.status == "pending":
+                pending_transactions += 1
+                pending_amount += amount
+            elif item.status == "failed":
+                failed_transactions += 1
+
+        return schemas.TopupSummaryOut(
+            total_transactions=len(items),
+            succeeded_transactions=succeeded_transactions,
+            pending_transactions=pending_transactions,
+            failed_transactions=failed_transactions,
+            total_succeeded_amount=total_succeeded_amount,
+            pending_amount=pending_amount,
+            week_succeeded_amount=week_succeeded_amount,
+            latest_topup_at=latest_topup_at,
+        )

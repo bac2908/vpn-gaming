@@ -204,6 +204,7 @@ class SessionHistoryItemOut(BaseModel):
     status: str
     started_at: datetime | None = None
     ended_at: datetime | None = None
+    billing_started_at: datetime | None = None
     duration_seconds: int | None = None
     ip_address: str | None = None
     vpn_online: bool = False
@@ -237,6 +238,53 @@ class SessionHistoryPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class SessionDailyBucketOut(BaseModel):
+    date: str
+    play_seconds: int = 0
+    session_count: int = 0
+    charged_amount: int = 0
+
+
+class SessionMachineSummaryOut(BaseModel):
+    machine_id: UUID | None = None
+    code: str = "Chưa gắn máy"
+    gpu: str | None = None
+    location: str | None = None
+    region: str | None = None
+    play_seconds: int = 0
+    session_count: int = 0
+    charged_amount: int = 0
+
+
+class SessionStatusSummaryOut(BaseModel):
+    key: str
+    label: str
+    count: int = 0
+
+
+class SessionHistorySummaryOut(BaseModel):
+    total_sessions: int = 0
+    active_sessions: int = 0
+    stopped_sessions: int = 0
+    failed_sessions: int = 0
+    resumable_sessions: int = 0
+    streamed_sessions: int = 0
+    pre_stream_sessions: int = 0
+    total_play_seconds: int = 0
+    average_play_seconds: int = 0
+    total_charged_minutes: int = 0
+    total_free_minutes: int = 0
+    total_charged_amount: int = 0
+    total_refunded_amount: int = 0
+    net_charged_amount: int = 0
+    week_play_seconds: int = 0
+    week_charged_amount: int = 0
+    week_session_count: int = 0
+    daily_buckets: list[SessionDailyBucketOut] = []
+    top_machines: list[SessionMachineSummaryOut] = []
+    status_counts: list[SessionStatusSummaryOut] = []
 
 
 class MachineDetailOut(BaseModel):
@@ -373,6 +421,17 @@ class TopupHistoryPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class TopupSummaryOut(BaseModel):
+    total_transactions: int = 0
+    succeeded_transactions: int = 0
+    pending_transactions: int = 0
+    failed_transactions: int = 0
+    total_succeeded_amount: int = 0
+    pending_amount: int = 0
+    week_succeeded_amount: int = 0
+    latest_topup_at: datetime | None = None
 
 
 class UserBalanceOut(BaseModel):

@@ -114,6 +114,14 @@ class PaymentRepository:
         )
         return items, total
 
+    def list_user_topups_for_summary(self, user_id: UUID) -> list[models.TopupTransaction]:
+        return (
+            self.db.query(models.TopupTransaction)
+            .filter(models.TopupTransaction.user_id == user_id)
+            .order_by(models.TopupTransaction.created_at.desc())
+            .all()
+        )
+
     def commit(self) -> None:
         self.db.commit()
 

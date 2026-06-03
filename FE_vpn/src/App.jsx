@@ -81,7 +81,7 @@ function App() {
   })() : null
 
   const [token, setToken] = useState(storedToken)
-  const [user, setUser] = useState(storedUser || (storedToken ? userFromToken(storedToken, storedEmail) : null))
+  const [user, setUser] = useState(storedToken ? (storedUser || userFromToken(storedToken, storedEmail)) : null)
   const [session, setSession] = useState(DEFAULT_SESSION)
   const [topupOpen, setTopupOpen] = useState(false)
   const [topupAmount, setTopupAmount] = useState(50000)
@@ -154,6 +154,29 @@ function App() {
     setSession(DEFAULT_SESSION)
   }, [token, setToken, setUser, setSession])
 
+  const expireAuthSession = useCallback(() => {
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (currentPath.startsWith('/app') || currentPath.startsWith('/admin')) {
+      window.sessionStorage?.setItem('post_login_redirect', currentPath)
+    }
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_email')
+    localStorage.removeItem('auth_user')
+    localStorage.removeItem('active_session')
+    setToken(null)
+    setUser(null)
+    setSession(DEFAULT_SESSION)
+  }, [setToken, setUser, setSession])
+
+  useEffect(() => {
+    const handleAuthExpired = (event) => {
+      console.warn('Auth session expired or invalid', event.detail)
+      expireAuthSession()
+    }
+    window.addEventListener('vpngaming:auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('vpngaming:auth-expired', handleAuthExpired)
+  }, [expireAuthSession])
+
   useEffect(() => {
     if (!token || user?.id) return
     fetchMe(token)
@@ -163,10 +186,9 @@ function App() {
       })
       .catch((err) => {
         console.warn('Fetch me failed', err)
-        setToken(null)
-        setUser(null)
+        expireAuthSession()
       })
-  }, [token, user, storedEmail, setUser, setToken])
+  }, [token, user, storedEmail, setUser, expireAuthSession])
 
   useEffect(() => {
     if (!token || !user?.id) {
@@ -182,8 +204,11 @@ function App() {
       })
       .catch((err) => {
         console.warn('Refresh user profile failed', err)
+        if (err?.status === 401) {
+          expireAuthSession()
+        }
       })
-  }, [token, user, storedEmail, setUser])
+  }, [token, user, storedEmail, setUser, expireAuthSession])
 
   // Refresh balance when needed
   const refreshBalance = useCallback(async () => {
@@ -195,8 +220,11 @@ function App() {
       }
     } catch (err) {
       console.warn('Refresh balance failed', err)
+      if (err?.status === 401) {
+        expireAuthSession()
+      }
     }
-  }, [token, user, setUser])
+  }, [token, user, setUser, expireAuthSession])
 
   const context = useMemo(
     () => ({

@@ -43,8 +43,13 @@ export async function getSessionHistory(params = {}, token) {
     return request(`/machines/sessions/history${query}`, { token })
 }
 
-export async function stopSession(sessionId, token) {
-    return request(`/machines/sessions/${sessionId}/stop`, { method: 'POST', token })
+export async function getSessionHistorySummary(token) {
+    return request('/machines/sessions/history/summary', { token })
+}
+
+export async function stopSession(sessionId, token, options = {}) {
+    const query = buildQuery({ retain_snapshot: options.retainSnapshot ? true : undefined })
+    return request(`/machines/sessions/${sessionId}/stop${query}`, { method: 'POST', token })
 }
 
 export async function heartbeatSession(sessionId, payload = {}, token) {

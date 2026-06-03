@@ -76,13 +76,22 @@ def get_user_session_history(
     )
 
 
-@router.post("/sessions/{session_id}/stop", response_model=schemas.SessionOut)
-def stop_user_session(
-    session_id: UUID,
+@router.get("/sessions/history/summary", response_model=schemas.SessionHistorySummaryOut)
+def get_user_session_history_summary(
     current_user: models.User = Depends(get_current_user),
     machine_service: MachineService = Depends(get_machine_service),
 ):
-    return machine_service.stop_user_session(session_id, current_user)
+    return machine_service.get_user_session_history_summary(current_user)
+
+
+@router.post("/sessions/{session_id}/stop", response_model=schemas.SessionOut)
+def stop_user_session(
+    session_id: UUID,
+    retain_snapshot: bool = Query(False),
+    current_user: models.User = Depends(get_current_user),
+    machine_service: MachineService = Depends(get_machine_service),
+):
+    return machine_service.stop_user_session(session_id, current_user, retain_snapshot=retain_snapshot)
 
 
 @router.post("/sessions/{session_id}/heartbeat", response_model=schemas.SessionOut)

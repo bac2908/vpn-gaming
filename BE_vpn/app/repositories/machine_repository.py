@@ -153,6 +153,14 @@ class MachineRepository:
         )
         return items, total
 
+    def list_user_sessions_for_summary(self, user_id: UUID) -> list[models.VpnSession]:
+        return (
+            self.db.query(models.VpnSession)
+            .filter(models.VpnSession.user_id == user_id)
+            .order_by(models.VpnSession.started_at.desc(), models.VpnSession.id.desc())
+            .all()
+        )
+
     def get_machines_by_ids(self, machine_ids: list[UUID]) -> dict[UUID, models.Machine]:
         if not machine_ids:
             return {}
