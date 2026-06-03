@@ -141,11 +141,11 @@ class MachinesPage(BaseModel):
 class UserUpdateRequest(BaseModel):
     display_name: str | None = None
     role: str | None = None
-    status: str | None = None
+    status: str | None = Field(None, regex="^(active|inactive)$")
 
 
 class AdminTopupRequest(BaseModel):
-    amount: int = Field(..., gt=0, description="Số tiền nạp (VND)")
+    amount: int = Field(..., description="Số tiền điều chỉnh (VND), dương để nạp và âm để trừ")
     description: str | None = None
 
 
@@ -353,6 +353,7 @@ class TopupTransactionOut(BaseModel):
     """Response thông tin giao dịch nạp tiền"""
     id: UUID
     user_id: UUID
+    user_email: str | None = None
     amount: int
     balance_before: int
     balance_after: int

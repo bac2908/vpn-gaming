@@ -57,12 +57,12 @@ def test_update_user_updates_fields_and_commits() -> None:
     )
     service.repo.get_user_by_id.return_value = user
 
-    payload = schemas.UserUpdateRequest(display_name="New", role="admin", status="suspended")
+    payload = schemas.UserUpdateRequest(display_name="New", role="admin", status="inactive")
     updated = service.update_user(user.id, payload)
 
     assert updated.display_name == "New"
     assert updated.role == "admin"
-    assert updated.status == "suspended"
+    assert updated.status == "inactive"
     service.repo.commit.assert_called_once()
     service.repo.refresh.assert_called_once_with(user)
 
@@ -84,3 +84,37 @@ def test_topup_user_commits_and_returns_transaction() -> None:
     service.repo.create_admin_topup.assert_called_once_with(user, 50000, "manual topup")
     service.repo.commit.assert_called_once()
     service.repo.refresh.assert_called_once_with(topup)
+
+
+def test_topup_user_allows_admin_debit_when_balance_is_enough() -> None:
+    service = _build_service()
+    user_id = uuid4()
+    user = SimpleNamespace(id=user_id, email="customer@example.com", balance=100000)
+    topup = SimpleNamespace(id=uuid4(), amount=20000)
+
+    service.repo.get_user_by_id.return_value = user
+    service.repo.create_admin_topup.return_value = (topup, 100000, 80000)
+
+    admin_user = SimpleNamespace(email="admin@example.com")
+    payload = schemas.AdminTopupRequest(amount=-20000, description="manual debit")
+    result = service.topup_user(user_id, payload, admin_user)
+
+    assert result is topup
+    service.repo.create_admin_topup.assert_called_once_with(user, -20000, "manual debit")
+    service.repo.commit.assert_called_once()
+
+
+def test_topup_user_blocks_admin_debit_over_balance() -> None:
+    service = _build_service()
+    user_id = uuid4()
+    user = SimpleNamespace(id=user_id, email="customer@example.com", balance=10000)
+    service.repo.get_user_by_id.return_value = user
+
+    admin_user = SimpleNamespace(email="admin@example.com")
+    payload = schemas.AdminTopupRequest(amount=-20000, description="manual debit")
+
+    with pytest.raises(HTTPException) as exc:
+        service.topup_user(user_id, payload, admin_user)
+
+    assert exc.value.status_code == 400
+    service.repo.create_admin_topup.assert_not_called()

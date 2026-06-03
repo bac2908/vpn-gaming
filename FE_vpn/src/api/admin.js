@@ -1,4 +1,4 @@
-import { request } from './client'
+import { API_BASE_URL, request } from './client'
 
 function buildQuery(params = {}) {
     const entries = Object.entries(params)
@@ -90,5 +90,13 @@ export async function getRevenueStatistics(params, token) {
 
 export async function exportTransactionsCSV(params, token) {
     const query = buildQuery(params)
-    return request(`/admin/transactions/export${query}`, { token })
+    const finalHeaders = {}
+    if (token) finalHeaders.Authorization = `Bearer ${token}`
+    const url = API_BASE_URL ? `${API_BASE_URL}/admin/transactions/export${query}` : `/admin/transactions/export${query}`
+    const response = await fetch(url, { headers: finalHeaders })
+    if (!response.ok) {
+        const text = await response.text()
+        throw new Error(text || `Request failed (${response.status})`)
+    }
+    return response.blob()
 }

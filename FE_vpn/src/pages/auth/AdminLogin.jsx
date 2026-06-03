@@ -33,7 +33,7 @@ function AdminLogin({ ctx }) {
             .finally(() => setLoading(false))
     }
 
-    if (ctx.user?.role === 'admin') return <Navigate to="/admin" replace />
+    if (ctx.user?.role === 'admin') return <Navigate to="/admin-portal" replace />
 
     return (
         <div className="auth">

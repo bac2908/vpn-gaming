@@ -233,7 +233,8 @@ function App() {
           <Route path="/register" element={<Register ctx={context} />} />
           <Route path="/forgot" element={<ForgotPassword />} />
           <Route path="/reset" element={<ResetPassword ctx={context} />} />
-          <Route path="/admin/login" element={<AdminLogin ctx={context} />} />
+          <Route path="/admin/login" element={<Navigate to="/admin-portal/login" replace />} />
+          <Route path="/admin-portal/login" element={<AdminLogin ctx={context} />} />
           <Route
             path="/app/*"
             element={
@@ -251,12 +252,18 @@ function App() {
             }
           />
           <Route
-            path="/admin/*"
+            path="/admin-portal/*"
             element={
               <AdminShell ctx={context}>
                 <Routes>
-                  <Route index element={<Admin ctx={context} />} />
-                  <Route path="*" element={<Navigate to="/admin" replace />} />
+                  <Route index element={<Navigate to="/admin-portal/overview" replace />} />
+                  <Route path="overview" element={<Admin ctx={context} />} />
+                  <Route path="users" element={<Admin ctx={context} />} />
+                  <Route path="machines" element={<Admin ctx={context} />} />
+                  <Route path="sessions" element={<Admin ctx={context} />} />
+                  <Route path="billing" element={<Admin ctx={context} />} />
+                  <Route path="settings" element={<Admin ctx={context} />} />
+                  <Route path="*" element={<Navigate to="/admin-portal/overview" replace />} />
                 </Routes>
               </AdminShell>
             }
@@ -509,7 +516,7 @@ function SideNav({ session, user }) {
 }
 
 function AdminShell({ ctx, children }) {
-  if (!ctx.user?.id || ctx.user?.role !== 'admin') return <Navigate to="/admin/login" replace />
+  if (!ctx.user?.id || ctx.user?.role !== 'admin') return <Navigate to="/admin-portal/login" replace />
   return <div className="app-main">{children}</div>
 }
 

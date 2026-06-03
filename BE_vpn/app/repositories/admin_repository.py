@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import case, func
@@ -25,7 +25,10 @@ class AdminRepository:
         if role:
             query = query.filter(models.User.role == role)
         if status:
-            query = query.filter(models.User.status == status)
+            if status == "inactive":
+                query = query.filter(models.User.status != "active")
+            else:
+                query = query.filter(models.User.status == status)
 
         total = query.count()
         items = (
@@ -52,13 +55,13 @@ class AdminRepository:
 
         topup = models.TopupTransaction(
             user_id=user.id,
-            amount=amount,
+            amount=abs(amount),
             balance_before=old_balance,
             balance_after=new_balance,
             status="succeeded",
-            provider="admin",
+            provider="admin" if amount > 0 else "admin_debit",
             description=description,
-            completed_at=datetime.utcnow(),
+            completed_at=datetime.now(timezone.utc),
         )
         self.db.add(topup)
         return topup, old_balance, new_balance

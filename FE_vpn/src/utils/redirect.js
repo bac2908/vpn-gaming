@@ -1,5 +1,5 @@
 const DEFAULT_USER_PATH = '/app'
-const DEFAULT_ADMIN_PATH = '/admin'
+const DEFAULT_ADMIN_PATH = '/admin-portal'
 
 function decodeRedirect(value) {
     try {
@@ -19,7 +19,7 @@ export function getSafeRedirect(value, role = 'user') {
     }
 
     if (role === 'admin') {
-        return redirect.startsWith('/admin') ? redirect : DEFAULT_ADMIN_PATH
+        return redirect.startsWith('/admin-portal') ? redirect : DEFAULT_ADMIN_PATH
     }
 
     return redirect.startsWith('/app') ? redirect : DEFAULT_USER_PATH

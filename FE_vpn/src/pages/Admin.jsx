@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
     createMachine,
+    exportTransactionsCSV as exportTransactionsCSVApi,
+    failSession,
+    getTransactionDetail,
     listAdminMachines,
     listUsers,
     updateMachine,
@@ -18,7 +22,7 @@ import {
 } from '../api/admin'
 import './admin.css'
 import {
-    AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+    AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
     CartesianGrid, BarChart, Bar, PieChart, Pie, Cell, Legend
 } from 'recharts'
 
@@ -68,11 +72,13 @@ function SkeletonRows({ rowClass, cols = 4, count = 5 }) {
 
 const PRESETS = [50000, 100000, 200000, 500000]
 
-function TopupModal({ user, onClose, onConfirm }) {
+function TopupModal({ user, mode = 'add', onClose, onConfirm }) {
     const [amount, setAmount] = useState(100000)
     const [description, setDescription] = useState('')
     const [activePreset, setActivePreset] = useState(100000)
     const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+    const isSubtract = mode === 'subtract'
 
     const handlePreset = (val) => {
         setAmount(val)
@@ -87,10 +93,18 @@ function TopupModal({ user, onClose, onConfirm }) {
 
     const handleSubmit = async () => {
         if (!amount || amount <= 0) return
+        if (isSubtract && amount > Number(user.balance || 0)) {
+            setError('Không thể trừ quá số dư hiện tại')
+            return
+        }
         setLoading(true)
+        setError('')
         try {
-            await onConfirm(user.id, amount, description || `Admin topup cho ${user.email}`)
+            const signedAmount = isSubtract ? -amount : amount
+            await onConfirm(user.id, signedAmount, description || `Admin ${isSubtract ? 'trừ tiền' : 'topup'} cho ${user.email}`)
             onClose()
+        } catch (err) {
+            setError(err.message || (isSubtract ? 'Không trừ được tiền' : 'Không nạp được tiền'))
         } finally {
             setLoading(false)
         }
@@ -100,10 +114,10 @@ function TopupModal({ user, onClose, onConfirm }) {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
             <div className="modal-box">
                 <div className="modal-header">
-                    <div className="modal-icon success">💸</div>
+                    <div className={`modal-icon ${isSubtract ? 'danger' : 'success'}`}>💸</div>
                     <div>
-                        <p className="modal-title">Nạp tiền thủ công</p>
-                        <p className="modal-subtitle">Thêm số dư trực tiếp vào tài khoản người dùng</p>
+                        <p className="modal-title">{isSubtract ? 'Trừ tiền thủ công' : 'Nạp tiền thủ công'}</p>
+                        <p className="modal-subtitle">{isSubtract ? 'Trừ số dư trực tiếp khỏi tài khoản người dùng' : 'Thêm số dư trực tiếp vào tài khoản người dùng'}</p>
                     </div>
                 </div>
                 <div className="modal-body">
@@ -117,14 +131,14 @@ function TopupModal({ user, onClose, onConfirm }) {
 
                     <div className="form-group">
                         <label>Chọn nhanh số tiền</label>
-                        <div className="preset-group">
+                        <div className={`preset-group ${isSubtract ? 'danger' : ''}`}>
                             {PRESETS.map(p => (
                                 <button
                                     key={p}
                                     className={`preset-btn ${activePreset === p ? 'active' : ''}`}
                                     onClick={() => handlePreset(p)}
                                 >
-                                    +{(p / 1000).toFixed(0)}k
+                                    {isSubtract ? '-' : '+'}{(p / 1000).toFixed(0)}k
                                 </button>
                             ))}
                         </div>
@@ -133,7 +147,7 @@ function TopupModal({ user, onClose, onConfirm }) {
                     <div className="form-group">
                         <label>Số tiền tùy chọn (VND)</label>
                         <input
-                            className="input-full amount-input"
+                            className={`input-full amount-input ${isSubtract ? 'danger' : ''}`}
                             type="number"
                             min="1000"
                             step="1000"
@@ -142,7 +156,9 @@ function TopupModal({ user, onClose, onConfirm }) {
                             placeholder="Nhập số tiền..."
                         />
                         {amount > 0 && (
-                            <div className="amount-display">= {formatMoney(amount)}</div>
+                            <div className={`amount-display ${isSubtract ? 'danger' : ''}`}>
+                                {isSubtract ? '-' : '+'} {formatMoney(amount)}
+                            </div>
                         )}
                     </div>
 
@@ -153,19 +169,20 @@ function TopupModal({ user, onClose, onConfirm }) {
                             type="text"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder={`Admin topup cho ${user.email}`}
+                            placeholder={`Admin ${isSubtract ? 'trừ tiền' : 'topup'} cho ${user.email}`}
                             maxLength={200}
                         />
                     </div>
+                    {error && <div className="alert error">{error}</div>}
                 </div>
                 <div className="modal-footer">
                     <button className="btn ghost" onClick={onClose} disabled={loading}>Hủy</button>
                     <button
-                        className="btn success"
+                        className={`btn ${isSubtract ? 'danger' : 'success'}`}
                         onClick={handleSubmit}
                         disabled={loading || !amount || amount <= 0}
                     >
-                        {loading ? '⏳ Đang nạp...' : `✅ Nạp ${formatMoney(amount)}`}
+                        {loading ? '⏳ Đang xử lý...' : `${isSubtract ? 'Trừ' : 'Nạp'} ${formatMoney(amount)}`}
                     </button>
                 </div>
             </div>
@@ -177,7 +194,7 @@ function TopupModal({ user, onClose, onConfirm }) {
    CUSTOM CONFIRM MODAL
    ============================================================ */
 
-function ConfirmModal({ title, subtitle, targetLabel, warningText, onClose, onConfirm, type = 'danger' }) {
+function ConfirmModal({ title, subtitle, targetLabel, warningText, onClose, onConfirm, type = 'danger', confirmLabel, cancelLabel = 'Giữ lại' }) {
     const [loading, setLoading] = useState(false)
 
     const handleConfirm = async () => {
@@ -211,13 +228,13 @@ function ConfirmModal({ title, subtitle, targetLabel, warningText, onClose, onCo
                     )}
                 </div>
                 <div className="modal-footer">
-                    <button className="btn ghost" onClick={onClose} disabled={loading}>Giữ lại</button>
+                    <button className="btn ghost" onClick={onClose} disabled={loading}>{cancelLabel}</button>
                     <button
                         className={`btn ${type}`}
                         onClick={handleConfirm}
                         disabled={loading}
                     >
-                        {loading ? '⏳ Đang xử lý...' : type === 'danger' ? '🗑️ Xác nhận xóa' : '⏹️ Dừng phiên'}
+                        {loading ? '⏳ Đang xử lý...' : (confirmLabel || (type === 'danger' ? '🗑️ Xác nhận xóa' : '⏹️ Dừng phiên'))}
                     </button>
                 </div>
             </div>
@@ -269,7 +286,7 @@ function SwitchToggle({ checked, onChange }) {
    TRANSACTION DETAIL DIALOG
    ============================================================ */
 
-function TransactionDialog({ transaction, dialogRef }) {
+function TransactionDialog({ transaction, dialogRef, loading = false }) {
     if (!transaction) return null
 
     const steps = [
@@ -283,9 +300,12 @@ function TransactionDialog({ transaction, dialogRef }) {
             <div className="dialog-content">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                     <h3 style={{ margin: 0 }}>📋 Chi tiết giao dịch</h3>
-                    <span className={`pill ${transaction.status === 'succeeded' ? 'success' : transaction.status === 'failed' ? 'error' : 'warning'}`} style={{ fontSize: '0.85rem', padding: '5px 14px' }}>
-                        {transaction.status === 'succeeded' ? '✅ Thành công' : transaction.status === 'failed' ? '❌ Thất bại' : '⏳ Đang xử lý'}
-                    </span>
+                    <div className="actions">
+                        {loading && <span className="pill ghost">Đang tải chi tiết...</span>}
+                        <span className={`pill ${transaction.status === 'succeeded' ? 'success' : transaction.status === 'failed' ? 'error' : 'warning'}`} style={{ fontSize: '0.85rem', padding: '5px 14px' }}>
+                            {transaction.status === 'succeeded' ? '✅ Thành công' : transaction.status === 'failed' ? '❌ Thất bại' : '⏳ Đang xử lý'}
+                        </span>
+                    </div>
                 </div>
 
                 {/* Transaction Timeline */}
@@ -307,7 +327,7 @@ function TransactionDialog({ transaction, dialogRef }) {
                     </div>
                     <div className="detail-item">
                         <label>Người dùng</label>
-                        <span className="truncate" style={{ fontSize: '0.78rem' }}>{transaction.user_id}</span>
+                        <span className="truncate" style={{ fontSize: '0.78rem' }}>{transaction.user_email || transaction.user_id}</span>
                     </div>
                     <div className="detail-item">
                         <label>Số tiền</label>
@@ -354,26 +374,305 @@ function TransactionDialog({ transaction, dialogRef }) {
     )
 }
 
+function UserDetailModal({ user, currentUserId, token, onClose, onTopup, onBalanceAdjust, onStatusChange }) {
+    const [recentTransactions, setRecentTransactions] = useState([])
+    const [recentSessions, setRecentSessions] = useState([])
+    const [activityLoading, setActivityLoading] = useState(false)
+    const [activityError, setActivityError] = useState('')
+    const [activeDetailTab, setActiveDetailTab] = useState('overview')
+
+    useEffect(() => {
+        if (!user?.id || !token) return
+        let cancelled = false
+        async function loadUserActivity() {
+            setActivityLoading(true)
+            setActivityError('')
+            try {
+                const [transactionsData, sessionsData] = await Promise.all([
+                    adminListTopupTransactions({ page: 1, page_size: 5, user_id: user.id }, token),
+                    listSessions({ page: 1, page_size: 5, user_id: user.id }, token),
+                ])
+                if (!cancelled) {
+                    setRecentTransactions(transactionsData.items || [])
+                    setRecentSessions(sessionsData.items || [])
+                }
+            } catch (err) {
+                if (!cancelled) setActivityError(err.message || 'Không tải được lịch sử người dùng')
+            } finally {
+                if (!cancelled) setActivityLoading(false)
+            }
+        }
+        loadUserActivity()
+        return () => { cancelled = true }
+    }, [user?.id, token])
+
+    if (!user) return null
+
+    const isSelf = user.id === currentUserId
+    const hasLowBalance = Number(user.balance || 0) < 10000
+    const hasActiveSession = recentSessions.some(session => session.status === 'active' || session.lifecycle_state === 'running')
+
+    return (
+        <div className="modal-overlay" onMouseDown={(event) => {
+            if (event.target === event.currentTarget) onClose()
+        }}>
+            <div className="modal-box wide-modal" onMouseDown={(event) => event.stopPropagation()}>
+                <div className="modal-header">
+                    <div className="modal-icon info">👤</div>
+                    <div>
+                        <p className="modal-title">Chi tiết người dùng</p>
+                        <p className="modal-subtitle">{user.email}</p>
+                    </div>
+                </div>
+                <div className="modal-body">
+                    <div className="user-detail-hero">
+                        <div className="user-detail-avatar">{String(user.display_name || user.email || 'U').slice(0, 1).toUpperCase()}</div>
+                        <div className="user-detail-main">
+                            <div className="user-detail-title-row">
+                                <h4>{user.display_name || user.email}</h4>
+                                <span className="pill ghost">{userRoleLabel(user.role)}</span>
+                                <span className={`pill ${userStatusClass(user.status)}`}>{userStatusLabel(user.status)}</span>
+                            </div>
+                            <p>{user.email}</p>
+                            <div className="user-warning-row">
+                                {hasLowBalance && <span className="mini-badge warning">Số dư thấp</span>}
+                                {hasActiveSession && <span className="mini-badge info">Đang có session</span>}
+                                {isSelf && <span className="mini-badge warning">Tài khoản hiện tại</span>}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="user-detail-tabs">
+                        <button className={activeDetailTab === 'overview' ? 'active' : ''} onClick={() => setActiveDetailTab('overview')}>Tổng quan</button>
+                        <button className={activeDetailTab === 'transactions' ? 'active' : ''} onClick={() => setActiveDetailTab('transactions')}>Nạp tiền</button>
+                        <button className={activeDetailTab === 'sessions' ? 'active' : ''} onClick={() => setActiveDetailTab('sessions')}>Phiên VPN</button>
+                    </div>
+
+                    {activeDetailTab === 'overview' && (
+                        <>
+                            <div className="detail-grid">
+                                <div className="detail-item">
+                                    <label>ID</label>
+                                    <span className="truncate" title={user.id}>{user.id}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>Tên hiển thị</label>
+                                    <span>{user.display_name || '-'}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>Số dư</label>
+                                    <span className="money">{formatMoney(user.balance)}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>Role</label>
+                                    <span>{userRoleLabel(user.role)}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>Trạng thái</label>
+                                    <span className={`pill ${userStatusClass(user.status)}`}>{userStatusLabel(user.status)}</span>
+                                </div>
+                                <div className="detail-item">
+                                    <label>Ngày tạo</label>
+                                    <span>{user.created_at ? new Date(user.created_at).toLocaleString('vi-VN') : '-'}</span>
+                                </div>
+                            </div>
+                            {isSelf && (
+                                <div className="alert warning" style={{ marginTop: 16 }}>
+                                    Đây là tài khoản admin hiện tại. Không thể vô hiệu hóa chính tài khoản đang đăng nhập.
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {activeDetailTab === 'transactions' && (
+                        <div className="activity-panel user-tab-panel">
+                            <div className="activity-head">
+                                <h4>Lịch sử nạp tiền</h4>
+                                <span>{recentTransactions.length} gần đây</span>
+                            </div>
+                            {activityLoading ? (
+                                <div className="activity-empty">Đang tải...</div>
+                            ) : recentTransactions.length ? (
+                                <div className="activity-list">
+                                    {recentTransactions.map(item => (
+                                        <div key={item.id} className="activity-item">
+                                            <div>
+                                                <strong>{formatMoney(item.amount)}</strong>
+                                                <p>{item.created_at ? new Date(item.created_at).toLocaleString('vi-VN') : '-'}</p>
+                                            </div>
+                                            <span className={`pill ${item.status === 'succeeded' ? 'success' : item.status === 'failed' ? 'error' : 'warning'}`}>{item.status}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="activity-empty">Chưa có giao dịch</div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeDetailTab === 'sessions' && (
+                        <div className="activity-panel user-tab-panel">
+                            <div className="activity-head">
+                                <h4>Phiên VPN gần đây</h4>
+                                <span>{recentSessions.length} gần đây</span>
+                            </div>
+                            {activityLoading ? (
+                                <div className="activity-empty">Đang tải...</div>
+                            ) : recentSessions.length ? (
+                                <div className="activity-list">
+                                    {recentSessions.map(item => (
+                                        <div key={item.id} className="activity-item">
+                                            <div>
+                                                <strong>{item.machine_code || item.machine_id?.slice(0, 8) || '-'}</strong>
+                                                <p>{item.started_at ? new Date(item.started_at).toLocaleString('vi-VN') : '-'}</p>
+                                            </div>
+                                            <span className={`pill ${item.status === 'active' ? 'success' : item.status === 'failed' ? 'error' : 'ghost'}`}>{item.status}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="activity-empty">Chưa có phiên VPN</div>
+                            )}
+                        </div>
+                    )}
+                    {activityError && <div className="alert error">{activityError}</div>}
+                </div>
+                <div className="modal-footer">
+                    <button className="btn ghost" onClick={onClose}>Đóng</button>
+                    <button className="btn success" onClick={() => onTopup(user)}>💸 Nạp tiền</button>
+                    <button className="btn danger" onClick={() => onBalanceAdjust(user, 'subtract')}>Trừ tiền</button>
+                    <button className="btn ghost" disabled={isSelf || isUserActive(user)} onClick={() => onStatusChange(user, 'active')}>Kích hoạt</button>
+                    <button className="btn danger" disabled={isSelf || !isUserActive(user)} onClick={() => onStatusChange(user, 'inactive')}>Vô hiệu hóa</button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function MachineFormModal({ machine, onClose, onSubmit }) {
+    const isEdit = Boolean(machine)
+    const [form, setForm] = useState(() => ({
+        code: machine?.code || '',
+        region: machine?.region || '',
+        gpu: machine?.gpu || '',
+        ping_ms: machine?.ping_ms ?? '',
+        status: machine?.status || 'idle',
+        location: machine?.location || '',
+        base_rate_per_minute: machine?.base_rate_per_minute ?? '',
+        trial_eligible: Boolean(machine?.trial_eligible),
+    }))
+    const [saving, setSaving] = useState(false)
+
+    const submit = async () => {
+        setSaving(true)
+        try {
+            await onSubmit({
+                code: form.code.trim(),
+                region: form.region.trim() || null,
+                gpu: form.gpu.trim() || null,
+                ping_ms: form.ping_ms === '' ? null : Number(form.ping_ms),
+                status: form.status,
+                location: form.location.trim() || null,
+                base_rate_per_minute: form.base_rate_per_minute === '' ? null : Number(form.base_rate_per_minute),
+                trial_eligible: Boolean(form.trial_eligible),
+            })
+            onClose()
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    return (
+        <div className="modal-overlay" onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) onClose()
+        }}>
+            <div className="modal-box wide-modal" onMouseDown={(event) => event.stopPropagation()}>
+                <div className="modal-header">
+                    <div className="modal-icon info">🖥️</div>
+                    <div>
+                        <p className="modal-title">{isEdit ? 'Chỉnh sửa máy chủ' : 'Thêm máy chủ'}</p>
+                        <p className="modal-subtitle">{isEdit ? machine?.code : 'Tạo máy chủ mới trong hệ thống'}</p>
+                    </div>
+                </div>
+                <div className="modal-body">
+                    <div className="form-grid-2">
+                        <label className="form-group">
+                            <span>Code</span>
+                            <input value={form.code} disabled={isEdit} onChange={e => setForm(p => ({ ...p, code: e.target.value }))} />
+                        </label>
+                        <label className="form-group">
+                            <span>Region</span>
+                            <input value={form.region} onChange={e => setForm(p => ({ ...p, region: e.target.value }))} />
+                        </label>
+                        <label className="form-group">
+                            <span>GPU</span>
+                            <input value={form.gpu} onChange={e => setForm(p => ({ ...p, gpu: e.target.value }))} />
+                        </label>
+                        <label className="form-group">
+                            <span>Location</span>
+                            <input value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} />
+                        </label>
+                        <label className="form-group">
+                            <span>Ping (ms)</span>
+                            <input type="number" min="0" value={form.ping_ms} onChange={e => setForm(p => ({ ...p, ping_ms: e.target.value }))} />
+                        </label>
+                        <label className="form-group">
+                            <span>Giá/phút</span>
+                            <input type="number" min="0" value={form.base_rate_per_minute} onChange={e => setForm(p => ({ ...p, base_rate_per_minute: e.target.value }))} />
+                        </label>
+                        <label className="form-group">
+                            <span>Status</span>
+                            <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
+                                <option value="idle">idle</option>
+                                <option value="running">running</option>
+                                <option value="suspended">suspended</option>
+                                <option value="maintenance">maintenance</option>
+                                <option value="offline">offline</option>
+                            </select>
+                        </label>
+                        <label className="form-group checkbox-row">
+                            <span>Trial eligible</span>
+                            <input type="checkbox" checked={form.trial_eligible} onChange={e => setForm(p => ({ ...p, trial_eligible: e.target.checked }))} />
+                        </label>
+                    </div>
+                </div>
+                <div className="modal-footer">
+                    <button className="btn ghost" disabled={saving} onClick={onClose}>Hủy</button>
+                    <button className="btn primary" disabled={saving || !form.code.trim()} onClick={submit}>{saving ? 'Đang lưu...' : isEdit ? 'Lưu máy chủ' : 'Thêm máy chủ'}</button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 /* ============================================================
    MAIN ADMIN COMPONENT
    ============================================================ */
 
 const NAV_ITEMS = [
-    { key: 'Overview', label: 'Tổng quan', icon: '📊' },
-    { key: 'Users', label: 'Người dùng', icon: '👥' },
-    { key: 'Machines', label: 'Máy chủ', icon: '🖥️' },
-    { key: 'Sessions', label: 'Phiên kết nối', icon: '🎮' },
-    { key: 'Billing', label: 'Hóa đơn', icon: '💰' },
-    { key: 'Settings', label: 'Cấu hình', icon: '⚙️' },
+    { key: 'Overview', slug: 'overview', label: 'Tổng quan', icon: '📊' },
+    { key: 'Users', slug: 'users', label: 'Người dùng', icon: '👥' },
+    { key: 'Machines', slug: 'machines', label: 'Máy chủ', icon: '🖥️' },
+    { key: 'Sessions', slug: 'sessions', label: 'Phiên kết nối', icon: '🎮' },
+    { key: 'Billing', slug: 'billing', label: 'Hóa đơn', icon: '💰' },
+    { key: 'Settings', slug: 'settings', label: 'Cấu hình', icon: '⚙️' },
 ]
 
 const PIE_COLORS = ['#3dd598', '#f45d48', '#f2c94c']
+const TAB_BY_SLUG = NAV_ITEMS.reduce((acc, item) => ({ ...acc, [item.slug]: item.key }), {})
+
+const isUserActive = (user) => user?.status === 'active'
+const userStatusLabel = (status) => status === 'active' ? 'Hoạt động' : 'Không hoạt động'
+const userStatusClass = (status) => status === 'active' ? 'success' : 'error'
+const userRoleLabel = (role) => role === 'admin' ? 'Admin' : 'User'
 
 function Admin({ ctx }) {
     const token = ctx?.token
     const isAdmin = ctx?.user?.role === 'admin'
-
-    const [activeTab, setActiveTab] = useState('Overview')
+    const location = useLocation()
+    const navigate = useNavigate()
+    const activeSlug = location.pathname.split('/').filter(Boolean)[1] || 'overview'
+    const activeTab = TAB_BY_SLUG[activeSlug] || 'Overview'
 
     // Dashboard
     const [dashboard, setDashboard] = useState(null)
@@ -393,7 +692,9 @@ function Admin({ ctx }) {
     const [users, setUsers] = useState([])
     const [userError, setUserError] = useState('')
     const [userLoading, setUserLoading] = useState(false)
-    const [userFilters, setUserFilters] = useState({ email: '', role: '', status: '' })
+    const [userFilters, setUserFilters] = useState({ email: '', status: '' })
+    const [userSort, setUserSort] = useState({ key: 'created_at', direction: 'desc' })
+    const [selectedUser, setSelectedUser] = useState(null)
 
     // Machines
     const [machinePage, setMachinePage] = useState(1)
@@ -403,7 +704,8 @@ function Admin({ ctx }) {
     const [machineError, setMachineError] = useState('')
     const [machineLoading, setMachineLoading] = useState(false)
     const [machineFilters, setMachineFilters] = useState({ region: '', gpu: '', status: '' })
-    const [newMachine, setNewMachine] = useState({ code: '', region: '', gpu: '', ping_ms: '', status: 'idle', location: '', base_rate_per_minute: '', trial_eligible: false })
+    const [machineEditor, setMachineEditor] = useState(null)
+    const [machineCreatorOpen, setMachineCreatorOpen] = useState(false)
 
     // Sessions
     const [sessionPage, setSessionPage] = useState(1)
@@ -412,7 +714,7 @@ function Admin({ ctx }) {
     const [sessions, setSessions] = useState([])
     const [sessionError, setSessionError] = useState('')
     const [sessionLoading, setSessionLoading] = useState(false)
-    const [sessionFilters, setSessionFilters] = useState({ status: '' })
+    const [sessionFilters, setSessionFilters] = useState({ status: '', user_id: '', machine_id: '' })
 
     // Billing
     const [billingPage, setBillingPage] = useState(1)
@@ -440,10 +742,11 @@ function Admin({ ctx }) {
 
     // Transaction dialog
     const [selectedTransaction, setSelectedTransaction] = useState(null)
+    const [transactionLoading, setTransactionLoading] = useState(false)
     const dialogRef = useRef()
 
     // Custom modals
-    const [topupModal, setTopupModal] = useState(null) // { id, email, balance }
+    const [topupModal, setTopupModal] = useState(null) // { id, email, balance, mode }
     const [confirmModal, setConfirmModal] = useState(null) // { title, subtitle, targetLabel, warningText, onConfirm, type }
 
     // Toast notification
@@ -461,10 +764,41 @@ function Admin({ ctx }) {
     const machineTotalPages = Math.max(1, Math.ceil(machineTotal / machinePageSize))
     const sessionTotalPages = Math.max(1, Math.ceil(sessionTotal / sessionPageSize))
     const billingTotalPages = Math.max(1, Math.ceil(billingTotal / billingPageSize))
+    const userStart = userTotal ? ((userPage - 1) * userPageSize) + 1 : 0
+    const userEnd = Math.min(userPage * userPageSize, userTotal)
+    const sortedUsers = useMemo(() => {
+        const direction = userSort.direction === 'asc' ? 1 : -1
+        return [...users].sort((a, b) => {
+            const aValue = userSort.key === 'balance'
+                ? Number(a.balance || 0)
+                : userSort.key === 'created_at'
+                    ? new Date(a.created_at || 0).getTime()
+                    : String(a[userSort.key] || '').toLowerCase()
+            const bValue = userSort.key === 'balance'
+                ? Number(b.balance || 0)
+                : userSort.key === 'created_at'
+                    ? new Date(b.created_at || 0).getTime()
+                    : String(b[userSort.key] || '').toLowerCase()
+            if (aValue < bValue) return -1 * direction
+            if (aValue > bValue) return 1 * direction
+            return 0
+        })
+    }, [users, userSort])
+    const userSummary = useMemo(() => {
+        const active = users.filter(isUserActive).length
+        const admins = users.filter(user => user.role === 'admin').length
+        const lowBalance = users.filter(user => Number(user.balance || 0) < 10000).length
+        return {
+            active,
+            inactive: Math.max(0, users.length - active),
+            admins,
+            lowBalance,
+        }
+    }, [users])
 
     /* ---- Load Settings ---- */
     useEffect(() => {
-        if (!isAdmin) return
+        if (!isAdmin || activeTab !== 'Settings') return
         let cancelled = false
         async function loadSettings() {
             try {
@@ -479,7 +813,7 @@ function Admin({ ctx }) {
         }
         loadSettings()
         return () => { cancelled = true }
-    }, [isAdmin, token])
+    }, [activeTab, isAdmin, token])
 
     /* ---- Data loaders ---- */
     const loadDashboard = useCallback(async () => {
@@ -534,7 +868,13 @@ function Admin({ ctx }) {
         setSessionLoading(true)
         setSessionError('')
         try {
-            const data = await listSessions({ page: sessionPage, page_size: sessionPageSize, status: sessionFilters.status }, token)
+            const data = await listSessions({
+                page: sessionPage,
+                page_size: sessionPageSize,
+                status: sessionFilters.status,
+                user_id: sessionFilters.user_id,
+                machine_id: sessionFilters.machine_id,
+            }, token)
             setSessions(data.items || [])
             setSessionTotal(data.total || 0)
         } catch (err) {
@@ -568,22 +908,49 @@ function Admin({ ctx }) {
     }, [billingPage, billingPageSize, billingFilters, token, isAdmin])
 
     /* ---- Effects ---- */
-    useEffect(() => { loadDashboard() }, [loadDashboard])
-    useEffect(() => { loadRevenueStats() }, [loadRevenueStats])
-    useEffect(() => { loadMachineStats() }, [loadMachineStats])
-    useEffect(() => { loadUsers() }, [loadUsers])
-    useEffect(() => { loadMachines() }, [loadMachines])
-    useEffect(() => { loadSessions() }, [loadSessions])
-    useEffect(() => { loadBilling() }, [loadBilling])
+    useEffect(() => {
+        if (activeTab !== 'Overview') return
+        loadDashboard()
+        loadRevenueStats()
+        loadMachineStats()
+    }, [activeTab, loadDashboard, loadRevenueStats, loadMachineStats])
+
+    useEffect(() => {
+        if (activeTab !== 'Users') return
+        loadUsers()
+    }, [activeTab, loadUsers])
+
+    useEffect(() => {
+        if (activeTab !== 'Machines') return
+        loadMachines()
+        loadMachineStats()
+    }, [activeTab, loadMachines, loadMachineStats])
+
+    useEffect(() => {
+        if (activeTab !== 'Sessions') return
+        loadSessions()
+    }, [activeTab, loadSessions])
+
+    useEffect(() => {
+        if (activeTab !== 'Billing') return
+        loadBilling()
+        loadRevenueStats()
+    }, [activeTab, loadBilling, loadRevenueStats])
 
     /* ---- Handlers ---- */
     const handleLogout = () => ctx?.logout?.()
 
     const handleUserUpdate = async (userId, payload) => {
         try {
+            if (userId === ctx?.user?.id && payload.status && payload.status !== 'active') {
+                setUserError('Không thể tự vô hiệu hóa tài khoản admin hiện tại')
+                showToast('Không thể vô hiệu hóa chính tài khoản admin hiện tại', 'error')
+                return
+            }
             setUserError('')
             await updateUser(userId, payload, token)
             loadUsers()
+            setSelectedUser(prev => prev?.id === userId ? { ...prev, ...payload } : prev)
             showToast('Cập nhật người dùng thành công')
         } catch (err) {
             setUserError(err.message || 'Không cập nhật được user')
@@ -616,20 +983,19 @@ function Admin({ ctx }) {
         })
     }
 
-    const handleCreateMachine = async () => {
+    const handleCreateMachine = async (payload) => {
         try {
             setMachineError('')
             await createMachine({
-                code: newMachine.code,
-                region: newMachine.region || null,
-                gpu: newMachine.gpu || null,
-                ping_ms: newMachine.ping_ms ? Number(newMachine.ping_ms) : null,
-                status: newMachine.status,
-                location: newMachine.location || null,
-                base_rate_per_minute: newMachine.base_rate_per_minute ? Number(newMachine.base_rate_per_minute) : null,
-                trial_eligible: Boolean(newMachine.trial_eligible),
+                code: payload.code,
+                region: payload.region || null,
+                gpu: payload.gpu || null,
+                ping_ms: payload.ping_ms === '' || payload.ping_ms === undefined ? null : Number(payload.ping_ms),
+                status: payload.status,
+                location: payload.location || null,
+                base_rate_per_minute: payload.base_rate_per_minute === '' || payload.base_rate_per_minute === undefined ? null : Number(payload.base_rate_per_minute),
+                trial_eligible: Boolean(payload.trial_eligible),
             }, token)
-            setNewMachine({ code: '', region: '', gpu: '', ping_ms: '', status: 'idle', location: '', base_rate_per_minute: '', trial_eligible: false })
             setMachinePage(1)
             loadMachines(); loadMachineStats(); loadDashboard()
             showToast('Tạo máy chủ mới thành công')
@@ -653,14 +1019,95 @@ function Admin({ ctx }) {
         })
     }
 
+    const handleFailSession = (session) => {
+        setConfirmModal({
+            title: 'Đánh dấu phiên bị lỗi',
+            subtitle: 'Hệ thống sẽ xử lý kết thúc phiên và refund nếu đủ điều kiện',
+            targetLabel: `Session ID: ${session.id.slice(0, 16)}...`,
+            warningText: `Phiên của ${session.user_email || session.user_id?.slice(0, 8)} sẽ được đánh dấu lỗi vận hành.`,
+            type: 'danger',
+            onConfirm: async () => {
+                await failSession(session.id, { reason: 'vm_failed' }, token)
+                loadSessions(); loadMachines(); loadDashboard()
+                showToast('Đã đánh dấu phiên lỗi')
+            },
+        })
+    }
+
     const handleAdminTopup = (user) => {
-        setTopupModal({ id: user.id, email: user.email, balance: user.balance })
+        setSelectedUser(null)
+        setTopupModal({ id: user.id, email: user.email, balance: user.balance, mode: 'add' })
+    }
+
+    const handleBalanceAdjust = (user, mode) => {
+        setSelectedUser(null)
+        setTopupModal({ id: user.id, email: user.email, balance: user.balance, mode })
     }
 
     const handleTopupConfirm = async (userId, amount, description) => {
         await adminTopupUser(userId, Math.round(amount), description, token)
         loadUsers(); loadBilling(); loadDashboard()
-        showToast(`Đã nạp ${formatMoney(amount)} thành công!`)
+        showToast(`${amount < 0 ? 'Đã trừ' : 'Đã nạp'} ${formatMoney(Math.abs(amount))} thành công!`)
+    }
+
+    const openTransactionDetail = async (transaction) => {
+        setSelectedTransaction(transaction)
+        if (!dialogRef.current?.open) dialogRef.current?.showModal()
+        setTransactionLoading(true)
+        try {
+            const data = await getTransactionDetail(transaction.id, token)
+            setSelectedTransaction(data || transaction)
+        } catch (err) {
+            setBillingError(err.message || 'Không tải được chi tiết giao dịch')
+        } finally {
+            setTransactionLoading(false)
+        }
+    }
+
+    const requestUserStatusChange = (user, nextStatus) => {
+        if (!user) return
+        if (user.id === ctx?.user?.id && nextStatus !== 'active') {
+            setUserError('Không thể tự vô hiệu hóa tài khoản admin hiện tại')
+            showToast('Không thể vô hiệu hóa chính tài khoản admin hiện tại', 'error')
+            return
+        }
+        const activating = nextStatus === 'active'
+        setConfirmModal({
+            title: activating ? 'Kích hoạt người dùng' : 'Vô hiệu hóa người dùng',
+            subtitle: activating ? 'Người dùng sẽ có thể đăng nhập và sử dụng dịch vụ trở lại' : 'Người dùng sẽ bị chặn khỏi các thao tác sử dụng dịch vụ',
+            targetLabel: user.email,
+            warningText: activating
+                ? 'Hãy chắc chắn tài khoản này đã đủ điều kiện hoạt động trở lại.'
+                : 'Các phiên đang chạy của người dùng này cần được kiểm tra ở tab Phiên kết nối nếu muốn xử lý thêm.',
+            type: activating ? 'secondary' : 'danger',
+            confirmLabel: activating ? 'Kích hoạt' : 'Vô hiệu hóa',
+            onConfirm: async () => {
+                await handleUserUpdate(user.id, { status: nextStatus })
+            },
+        })
+    }
+
+    const changeUserSort = (key) => {
+        setUserSort(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+        }))
+    }
+
+    const handleMachineEditorSubmit = async (payload) => {
+        if (!machineEditor) return
+        const updatePayload = { ...payload }
+        delete updatePayload.code
+        try {
+            setMachineError('')
+            await updateMachine(machineEditor.id, updatePayload, token)
+            loadMachines(); loadMachineStats(); loadDashboard()
+            showToast('Cập nhật máy chủ thành công')
+        } catch (err) {
+            setMachineError(err.message || 'Không cập nhật được máy')
+            showToast('Không cập nhật được máy chủ', 'error')
+            throw err
+        }
     }
 
     const handleSettingsChange = (field, value) => {
@@ -678,10 +1125,10 @@ function Admin({ ctx }) {
         const retentionCount = Number(settingsForm.snapshot_retention_count)
 
         if (minLength < 8) return setSettingsMessage('Password min length phải >= 8')
-        if (minTopup < 1000) return setSettingsMessage('Mức nạp tối thiểu phải >= 1.000đ')
+        if (minTopup < 10000) return setSettingsMessage('Mức nạp tối thiểu phải >= 10.000đ')
         if (lockoutAttempts < 1) return setSettingsMessage('Số lần login sai phải >= 1')
         if (lockoutMinutes < 1) return setSettingsMessage('Thời gian lockout phải >= 1 phút')
-        if (sessionTimeout < 1) return setSettingsMessage('Session timeout phải >= 1 giờ')
+        if (sessionTimeout < 1 || sessionTimeout > 168) return setSettingsMessage('Session timeout phải từ 1 đến 168 giờ')
         if (retentionCount < 1) return setSettingsMessage('Snapshot retention phải >= 1')
 
         const payload = {
@@ -711,19 +1158,22 @@ function Admin({ ctx }) {
         }
     }
 
-    function exportTransactionsCSV() {
-        if (!billingTransactions.length) return
-        const header = ['User', 'Số tiền', 'Phương thức', 'Trạng thái', 'Thời gian', 'Ghi chú']
-        const rows = billingTransactions.map(t => [
-            t.user_id, t.amount, t.provider, t.status,
-            t.created_at ? new Date(t.created_at).toLocaleString('vi-VN') : '-',
-            t.description || '-',
-        ])
-        const csv = [header, ...rows].map(r => r.join(',')).join('\n')
-        const blob = new Blob([csv], { type: 'text/csv' })
-        const url = URL.createObjectURL(blob)
-        Object.assign(document.createElement('a'), { href: url, download: 'transactions.csv' }).click()
-        URL.revokeObjectURL(url)
+    async function exportTransactionsCSV() {
+        try {
+            const blob = await exportTransactionsCSVApi({
+                status: billingFilters.status,
+                provider: billingFilters.provider,
+                date_from: billingFilters.date_from ? new Date(billingFilters.date_from).toISOString() : undefined,
+                date_to: billingFilters.date_to ? new Date(billingFilters.date_to).toISOString() : undefined,
+            }, token)
+            const url = URL.createObjectURL(blob)
+            Object.assign(document.createElement('a'), { href: url, download: 'transactions.csv' }).click()
+            URL.revokeObjectURL(url)
+            showToast('Đã xuất CSV giao dịch')
+        } catch (err) {
+            setBillingError(err.message || 'Không xuất được CSV')
+            showToast('Không xuất được CSV', 'error')
+        }
     }
 
     /* ---- KPI data ---- */
@@ -736,6 +1186,32 @@ function Admin({ ctx }) {
             { label: 'Doanh thu hôm nay', value: formatMoney(dashboard.today_revenue), hint: `Tháng: ${formatMoney(dashboard.month_revenue)}`, icon: '💰', color: '#3dd598' },
         ]
     }, [dashboard])
+
+    const refreshActiveTab = () => {
+        if (activeTab === 'Overview') {
+            loadDashboard()
+            loadMachineStats()
+            loadRevenueStats()
+            return
+        }
+        if (activeTab === 'Users') {
+            loadUsers()
+            return
+        }
+        if (activeTab === 'Machines') {
+            loadMachines()
+            loadMachineStats()
+            return
+        }
+        if (activeTab === 'Sessions') {
+            loadSessions()
+            return
+        }
+        if (activeTab === 'Billing') {
+            loadBilling()
+            loadRevenueStats()
+        }
+    }
 
     /* ---- Not admin ---- */
     if (!isAdmin) {
@@ -759,21 +1235,34 @@ function Admin({ ctx }) {
         <div className="admin-shell">
             {/* ---- SIDENAV ---- */}
             <aside className="admin-sidenav">
-                <div className="brand">🎮 VPN Admin</div>
-                <div className="env env-prod">PRODUCTION</div>
+                <div className="brand">
+                    <span className="brand-mark">VG</span>
+                    <span>
+                        <strong>VPN Gaming</strong>
+                        <small>Admin Console</small>
+                    </span>
+                </div>
+                <div className="side-section-label">Workspace</div>
                 <nav>
                     {NAV_ITEMS.map(item => (
-                        <span
+                        <NavLink
                             key={item.key}
-                            className={`nav-item ${activeTab === item.key ? 'active' : ''}`}
-                            onClick={() => setActiveTab(item.key)}
+                            to={`/admin-portal/${item.slug}`}
+                            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                         >
                             <span className="nav-icon">{item.icon}</span>
-                            {item.label}
-                        </span>
+                            <span className="nav-label">{item.label}</span>
+                        </NavLink>
                     ))}
                 </nav>
                 <div className="sidenav-footer">
+                    <div className="side-user-card">
+                        <span className="side-user-avatar">{String(ctx?.user?.email || 'A').slice(0, 1).toUpperCase()}</span>
+                        <span className="side-user-meta">
+                            <strong>Admin</strong>
+                            <small title={ctx?.user?.email || ''}>{ctx?.user?.email || 'admin'}</small>
+                        </span>
+                    </div>
                     <button className="btn logout-btn" onClick={handleLogout}>🚪 Đăng xuất</button>
                 </div>
             </aside>
@@ -783,11 +1272,11 @@ function Admin({ ctx }) {
                 {/* Header */}
                 <header className="admin-header">
                     <div>
-                        <p className="muted">Bảng điều khiển quản trị</p>
+                        <p className="muted">Admin Portal / {NAV_ITEMS.find(n => n.key === activeTab)?.label || activeTab}</p>
                         <h1>{NAV_ITEMS.find(n => n.key === activeTab)?.label || activeTab}</h1>
                     </div>
                     <div className="actions">
-                        <button className="btn ghost" onClick={() => { loadDashboard(); loadMachineStats(); loadRevenueStats() }}>
+                        <button className="btn ghost" onClick={refreshActiveTab}>
                             🔄 Làm mới
                         </button>
                         <div className="user-menu">👤 {ctx?.user?.email || 'Admin'}</div>
@@ -935,7 +1424,7 @@ function Admin({ ctx }) {
                                     <p className="muted">Giao dịch gần đây</p>
                                     <h3>Recent Transactions</h3>
                                 </div>
-                                <button className="btn ghost" onClick={() => setActiveTab('Billing')}>Xem tất cả →</button>
+                                <button className="btn ghost" onClick={() => navigate('/admin-portal/billing')}>Xem tất cả →</button>
                             </div>
                             <div className="table">
                                 <div className="row head simple">
@@ -943,7 +1432,7 @@ function Admin({ ctx }) {
                                 </div>
                                 {dashboard?.recent_transactions?.map(t => (
                                     <div key={t.id} className="row simple">
-                                        <span className="truncate" style={{ fontSize: '0.85rem' }}>{t.user_id?.slice(0, 12)}...</span>
+                                        <span className="truncate" style={{ fontSize: '0.85rem' }}>{t.user_email || `${t.user_id?.slice(0, 12)}...`}</span>
                                         <span className="money">{formatMoney(t.amount)}</span>
                                         <span className={`pill ${t.status === 'succeeded' ? 'success' : t.status === 'failed' ? 'error' : 'warning'}`}>{t.status}</span>
                                         <span style={{ fontSize: '0.82rem', color: '#7a8499' }}>{t.created_at ? new Date(t.created_at).toLocaleString('vi-VN') : '-'}</span>
@@ -956,74 +1445,105 @@ function Admin({ ctx }) {
 
                 {/* ===== USERS TAB ===== */}
                 {activeTab === 'Users' && (
-                    <section className="card">
-                        <div className="section-head">
-                            <div>
+                    <section className="users-page">
+                        <div className="users-control-panel">
+                            <div className="users-control-title">
                                 <p className="muted">Users</p>
                                 <h3>Quản lý người dùng</h3>
+                                <div className="users-summary-strip">
+                                    <span>{userTotal} user</span>
+                                    <span>{userSummary.active} hoạt động</span>
+                                    <span>{userSummary.lowBalance} số dư thấp</span>
+                                    <span>{userSummary.admins} admin</span>
+                                </div>
                             </div>
-                            <div className="actions">
-                                <input className="input-inline" placeholder="🔍 Tìm email..." value={userFilters.email}
-                                    onChange={e => { setUserFilters(p => ({ ...p, email: e.target.value })); setUserPage(1) }} />
-                                <select className="input-inline" value={userFilters.role}
-                                    onChange={e => { setUserFilters(p => ({ ...p, role: e.target.value })); setUserPage(1) }}>
-                                    <option value="">Tất cả role</option>
-                                    <option value="user">User</option>
-                                    <option value="admin">Admin</option>
-                                </select>
-                                <select className="input-inline" value={userFilters.status}
-                                    onChange={e => { setUserFilters(p => ({ ...p, status: e.target.value })); setUserPage(1) }}>
-                                    <option value="">Tất cả trạng thái</option>
-                                    <option value="active">Active</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="suspended">Suspended</option>
-                                </select>
+                            <div className="users-filter-group">
+                                <label>
+                                    <span>Tìm kiếm</span>
+                                    <input className="input-inline" placeholder="Email người dùng" value={userFilters.email}
+                                        onChange={e => { setUserFilters(p => ({ ...p, email: e.target.value })); setUserPage(1) }} />
+                                </label>
+                                <label>
+                                    <span>Trạng thái</span>
+                                    <select className="input-inline" value={userFilters.status}
+                                        onChange={e => { setUserFilters(p => ({ ...p, status: e.target.value })); setUserPage(1) }}>
+                                        <option value="">Tất cả trạng thái</option>
+                                        <option value="active">Hoạt động</option>
+                                        <option value="inactive">Không hoạt động</option>
+                                    </select>
+                                </label>
                             </div>
                         </div>
-                        <div className="table">
-                            <div className="row head admin-user-row">
-                                <span>Email</span><span>Tên</span><span>Số dư</span><span>Role</span><span>Trạng thái</span><span>Hành động</span>
+
+                        <div className="users-table-panel">
+                            <div className="users-table-head">
+                                <div>
+                                    <h4>Danh sách người dùng</h4>
+                                    <span>Cập nhật theo bộ lọc hiện tại</span>
+                                </div>
+                                <div className="users-table-actions">
+                                    <select className="input-inline page-size-select" value={userPageSize} onChange={e => { setUserPageSize(Number(e.target.value)); setUserPage(1) }}>
+                                        <option value={10}>10/trang</option><option value={20}>20/trang</option><option value={50}>50/trang</option>
+                                    </select>
+                                </div>
                             </div>
-                            {userLoading
-                                ? <SkeletonRows rowClass="admin-user-row" cols={6} count={userPageSize} />
-                                : users.map(u => (
-                                    <div key={u.id} className="row admin-user-row">
-                                        <span className="truncate" style={{ fontSize: '0.86rem' }}>{u.email}</span>
-                                        <span style={{ fontSize: '0.88rem' }}>{u.display_name || <span className="muted">-</span>}</span>
-                                        <span className="money">{formatMoney(u.balance)}</span>
-                                        <span>
-                                            <select className="input-inline" style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-                                                value={u.role} onChange={e => handleUserUpdate(u.id, { role: e.target.value })}>
-                                                <option value="user">user</option>
-                                                <option value="admin">admin</option>
-                                            </select>
-                                        </span>
-                                        <span>
-                                            <select className={`status-select ${u.status}`}
-                                                value={u.status} onChange={e => handleUserUpdate(u.id, { status: e.target.value })}>
-                                                <option value="active">active</option>
-                                                <option value="pending">pending</option>
-                                                <option value="suspended">suspended</option>
-                                            </select>
-                                        </span>
-                                        <span className="actions">
-                                            <button className="btn success small" title="Nạp tiền" onClick={() => handleAdminTopup(u)}>💸 Nạp</button>
-                                            <button className="btn ghost small" title="Khóa tài khoản" onClick={() => handleUserUpdate(u.id, { status: 'suspended' })}>🔒</button>
-                                            <button className="btn ghost small" title="Mở khóa" onClick={() => handleUserUpdate(u.id, { status: 'active' })}>🔓</button>
-                                        </span>
-                                    </div>
-                                ))
-                            }
-                        </div>
-                        {userError && <div className="alert error">⚠️ {userError}</div>}
-                        <div className="admin-pagination">
-                            <div className="muted" style={{ fontSize: '0.83rem' }}>Trang {userPage}/{userTotalPages} · {userTotal} users</div>
-                            <div className="actions">
-                                <select className="input-inline" value={userPageSize} onChange={e => { setUserPageSize(Number(e.target.value)); setUserPage(1) }}>
-                                    <option value={10}>10/trang</option><option value={20}>20/trang</option><option value={50}>50/trang</option>
-                                </select>
-                                <button className="btn ghost" disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)}>← Trước</button>
-                                <button className="btn ghost" disabled={userPage >= userTotalPages} onClick={() => setUserPage(p => p + 1)}>Sau →</button>
+                            <div className="table users-table">
+                                <div className="row head admin-user-row">
+                                    <button className="sort-head" onClick={() => changeUserSort('email')}>Người dùng {userSort.key === 'email' ? (userSort.direction === 'asc' ? '↑' : '↓') : ''}</button>
+                                    <button className="sort-head" onClick={() => changeUserSort('balance')}>Số dư {userSort.key === 'balance' ? (userSort.direction === 'asc' ? '↑' : '↓') : ''}</button>
+                                    <span>Role</span>
+                                    <button className="sort-head" onClick={() => changeUserSort('status')}>Trạng thái {userSort.key === 'status' ? (userSort.direction === 'asc' ? '↑' : '↓') : ''}</button>
+                                    <span>Hành động</span>
+                                </div>
+                                {userLoading
+                                    ? <SkeletonRows rowClass="admin-user-row" cols={5} count={userPageSize} />
+                                    : sortedUsers.length ? sortedUsers.map(u => (
+                                        <div key={u.id} className="row admin-user-row">
+                                            <span className="user-identity-cell">
+                                                <span className="user-row-avatar">{String(u.display_name || u.email || 'U').slice(0, 1).toUpperCase()}</span>
+                                                <span className="user-row-meta">
+                                                    <strong className="truncate">{u.email}</strong>
+                                                    <small>{u.display_name || 'Chưa đặt tên hiển thị'}</small>
+                                                </span>
+                                            </span>
+                                            <span className="balance-cell">
+                                                <span className="money">{formatMoney(u.balance)}</span>
+                                                {Number(u.balance || 0) < 10000 && <span className="mini-dot warning" title="Số dư thấp" />}
+                                            </span>
+                                            <span><span className="pill ghost">{userRoleLabel(u.role)}</span></span>
+                                            <span>
+                                                <select className={`status-select ${u.status}`}
+                                                    value={isUserActive(u) ? 'active' : 'inactive'}
+                                                    disabled={u.id === ctx?.user?.id}
+                                                    onChange={e => requestUserStatusChange(u, e.target.value)}>
+                                                    <option value="active">Hoạt động</option>
+                                                    <option value="inactive">Không hoạt động</option>
+                                                </select>
+                                            </span>
+                                            <span className="actions user-row-actions">
+                                                <button className="btn ghost small" title="Chi tiết" onClick={() => setSelectedUser(u)}>Xem</button>
+                                                <button className="btn success small" title="Nạp tiền" onClick={() => handleAdminTopup(u)}>Nạp</button>
+                                                <button className="btn danger small" title="Trừ tiền" onClick={() => handleBalanceAdjust(u, 'subtract')}>Trừ</button>
+                                                {isUserActive(u) ? (
+                                                    <button className="btn ghost small" title="Vô hiệu hóa" disabled={u.id === ctx?.user?.id} onClick={() => requestUserStatusChange(u, 'inactive')}>Khóa</button>
+                                                ) : (
+                                                    <button className="btn ghost small" title="Kích hoạt" disabled={u.id === ctx?.user?.id} onClick={() => requestUserStatusChange(u, 'active')}>Mở</button>
+                                                )}
+                                            </span>
+                                        </div>
+                                    )) : <div className="table-empty">Không có người dùng phù hợp</div>
+                                }
+                            </div>
+                            {userError && <div className="alert error">⚠️ {userError}</div>}
+                            <div className="admin-pagination">
+                                <div className="pagination-summary">
+                                    <strong>Trang {userPage}/{userTotalPages}</strong>
+                                    <span>{userStart}-{userEnd} / {userTotal} users</span>
+                                </div>
+                                <div className="actions">
+                                    <button className="btn ghost" disabled={userPage <= 1} onClick={() => setUserPage(p => p - 1)}>← Trước</button>
+                                    <button className="btn ghost" disabled={userPage >= userTotalPages} onClick={() => setUserPage(p => p + 1)}>Sau →</button>
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -1031,22 +1551,33 @@ function Admin({ ctx }) {
 
                 {/* ===== MACHINES TAB ===== */}
                 {activeTab === 'Machines' && (
-                    <>
-                        <section className="grid grid-4">
+                    <section className="machines-page">
+                        <div className="grid grid-4 machine-kpis">
                             <div className="card border kpi-card"><span className="kpi-icon">🖥️</span><p className="muted">Tổng máy</p><h3>{machineStats?.total || 0}</h3></div>
                             <div className="card border kpi-card"><span className="kpi-icon">✅</span><p className="muted">Idle</p><h3 className="text-success">{machineStats?.idle || 0}</h3></div>
                             <div className="card border kpi-card"><span className="kpi-icon">⚡</span><p className="muted">Busy</p><h3 className="text-warning">{machineStats?.busy || 0}</h3></div>
                             <div className="card border kpi-card"><span className="kpi-icon">🔧</span><p className="muted">Maintenance</p><h3 className="text-danger">{machineStats?.maintenance || 0}</h3></div>
-                        </section>
+                        </div>
 
-                        <section className="card">
-                            <div className="section-head">
-                                <div><p className="muted">Machines</p><h3>Quản lý máy chủ</h3></div>
-                                <div className="actions">
+                        <div className="machines-control-panel">
+                            <div className="machines-control-title">
+                                <p className="muted">Machines</p>
+                                <h3>Quản lý máy chủ</h3>
+                                <span>Điều phối máy theo khu vực, GPU, trạng thái và giá chơi.</span>
+                            </div>
+                            <div className="machines-filter-group">
+                                <label>
+                                    <span>Region</span>
                                     <input className="input-inline" placeholder="🔍 Region" value={machineFilters.region}
                                         onChange={e => { setMachineFilters(p => ({ ...p, region: e.target.value })); setMachinePage(1) }} />
+                                </label>
+                                <label>
+                                    <span>GPU</span>
                                     <input className="input-inline" placeholder="GPU" value={machineFilters.gpu}
                                         onChange={e => { setMachineFilters(p => ({ ...p, gpu: e.target.value })); setMachinePage(1) }} />
+                                </label>
+                                <label>
+                                    <span>Status</span>
                                     <select className="input-inline" value={machineFilters.status}
                                         onChange={e => { setMachineFilters(p => ({ ...p, status: e.target.value })); setMachinePage(1) }}>
                                         <option value="">Tất cả</option>
@@ -1056,58 +1587,42 @@ function Admin({ ctx }) {
                                         <option value="maintenance">Maintenance</option>
                                         <option value="offline">Offline</option>
                                     </select>
-                                </div>
+                                </label>
+                                <button className="btn primary" onClick={() => setMachineCreatorOpen(true)}>Thêm máy</button>
                             </div>
+                        </div>
 
-                            {/* Create form */}
-                            <div className="card border admin-create">
-                                <h4>➕ Thêm máy chủ mới</h4>
-                                <div className="grid-6">
-                                    <input placeholder="Code *" value={newMachine.code} onChange={e => setNewMachine(p => ({ ...p, code: e.target.value }))} />
-                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                        <input placeholder="Region" style={{ flex: 1, paddingRight: 36 }} value={newMachine.region} onChange={e => setNewMachine(p => ({ ...p, region: e.target.value }))} />
-                                        {newMachine.region && (
-                                            <span style={{ position: 'absolute', right: 10 }}>
-                                                {getCountryData(newMachine.region).flagUrl
-                                                    ? <img src={getCountryData(newMachine.region).flagUrl} style={{ width: 20, height: 14, objectFit: 'cover', borderRadius: 2 }} alt="" />
-                                                    : getCountryData(newMachine.region).flag}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <input placeholder="GPU" value={newMachine.gpu} onChange={e => setNewMachine(p => ({ ...p, gpu: e.target.value }))} />
-                                    <input placeholder="Ping (ms)" type="number" min="0" value={newMachine.ping_ms} onChange={e => setNewMachine(p => ({ ...p, ping_ms: e.target.value }))} />
-                                    <input placeholder="Giá/phút" type="number" min="0" value={newMachine.base_rate_per_minute} onChange={e => setNewMachine(p => ({ ...p, base_rate_per_minute: e.target.value }))} />
-                                    <label className="field" style={{ margin: 0 }}>
-                                        <span>Trial</span>
-                                        <input type="checkbox" checked={newMachine.trial_eligible} onChange={e => setNewMachine(p => ({ ...p, trial_eligible: e.target.checked }))} />
-                                    </label>
-                                    <input placeholder="Location" value={newMachine.location} onChange={e => setNewMachine(p => ({ ...p, location: e.target.value }))} />
-                                    <button className="btn primary" onClick={handleCreateMachine} disabled={!newMachine.code}>Thêm máy</button>
+                        <div className="machines-table-panel">
+                            <div className="machines-table-head">
+                                <div>
+                                    <h4>Danh sách máy chủ</h4>
+                                    <span>{machineTotal} máy · trang {machinePage}/{machineTotalPages}</span>
                                 </div>
+                                <select className="input-inline page-size-select" value={machinePageSize} onChange={e => { setMachinePageSize(Number(e.target.value)); setMachinePage(1) }}>
+                                    <option value={10}>10/trang</option><option value={20}>20/trang</option><option value={50}>50/trang</option>
+                                </select>
                             </div>
-
-                            <div className="table">
+                            <div className="table machines-table">
                                 <div className="row head admin-machine-row-full">
-                                    <span>Code</span><span>Region</span><span>GPU</span><span>Ping</span><span>Location</span><span>Status</span><span>Actions</span>
+                                    <span>Máy chủ</span><span>Region</span><span>GPU</span><span>Ping</span><span>Giá/phút</span><span>Status</span><span>Actions</span>
                                 </div>
                                 {machineLoading
                                     ? <SkeletonRows rowClass="admin-machine-row-full" cols={7} count={machinePageSize} />
                                     : machines.map(m => (
                                         <div key={m.id} className="row admin-machine-row-full">
-                                            <span className="code">{m.code}</span>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <span className="machine-code-cell">
+                                                <span className="code">{m.code}</span>
+                                                {m.trial_eligible && <span className="pill success">Trial</span>}
+                                            </span>
+                                            <span className="machine-region-cell">
                                                 {getCountryData(m.region).flagUrl
                                                     ? <img src={getCountryData(m.region).flagUrl} style={{ width: 18, height: 12, borderRadius: 2 }} alt="" />
                                                     : getCountryData(m.region).flag}
                                                 <span style={{ fontSize: '0.85rem' }}>{m.region || '-'}</span>
                                             </span>
-                                            <span style={{ fontSize: '0.85rem' }}>{m.gpu || <span className="muted">-</span>}</span>
-                                            <span>
-                                                <input type="number" min="0" className="input-small" value={m.ping_ms ?? ''}
-                                                    onChange={e => setMachines(prev => prev.map(row => row.id === m.id ? { ...row, ping_ms: e.target.value === '' ? '' : Number(e.target.value) } : row))}
-                                                    onBlur={e => handleMachineUpdate(m.id, { ping_ms: e.target.value === '' ? null : Number(e.target.value) })} />
-                                            </span>
-                                            <span style={{ fontSize: '0.82rem' }}>{m.location || <span className="muted">-</span>}</span>
+                                            <span className="machine-gpu-cell">{m.gpu || <span className="muted">-</span>}</span>
+                                            <span className="machine-ping-cell">{m.ping_ms ?? '-'}ms</span>
+                                            <span className="money" style={{ fontSize: '0.82rem' }}>{formatMoney(m.base_rate_per_minute || 0)}</span>
                                             <span>
                                                 <select className={`status-select ${m.status}`} value={m.status}
                                                     onChange={e => handleMachineUpdate(m.id, { status: e.target.value })}>
@@ -1118,9 +1633,10 @@ function Admin({ ctx }) {
                                                     <option value="offline">offline</option>
                                                 </select>
                                             </span>
-                                            <span className="actions">
-                                                <button className="btn ghost small" onClick={() => handleMachineUpdate(m.id, { status: 'idle' })}>Reset</button>
-                                                <button className="btn danger small" onClick={() => handleDeleteMachine(m.id, m.code)}>🗑️</button>
+                                            <span className="actions machine-row-actions">
+                                                <button className="btn ghost small" onClick={() => setMachineEditor(m)}>Sửa</button>
+                                                <button className="btn ghost small" onClick={() => handleMachineUpdate(m.id, { status: 'idle' })}>Idle</button>
+                                                <button className="btn danger small" onClick={() => handleDeleteMachine(m.id, m.code)}>Xóa</button>
                                             </span>
                                         </div>
                                     ))
@@ -1128,17 +1644,17 @@ function Admin({ ctx }) {
                             </div>
                             {machineError && <div className="alert error">⚠️ {machineError}</div>}
                             <div className="admin-pagination">
-                                <div className="muted" style={{ fontSize: '0.83rem' }}>Trang {machinePage}/{machineTotalPages} · {machineTotal} máy</div>
+                                <div className="pagination-summary">
+                                    <strong>Trang {machinePage}/{machineTotalPages}</strong>
+                                    <span>{machineTotal} máy</span>
+                                </div>
                                 <div className="actions">
-                                    <select className="input-inline" value={machinePageSize} onChange={e => { setMachinePageSize(Number(e.target.value)); setMachinePage(1) }}>
-                                        <option value={10}>10/trang</option><option value={20}>20/trang</option><option value={50}>50/trang</option>
-                                    </select>
                                     <button className="btn ghost" disabled={machinePage <= 1} onClick={() => setMachinePage(p => p - 1)}>← Trước</button>
                                     <button className="btn ghost" disabled={machinePage >= machineTotalPages} onClick={() => setMachinePage(p => p + 1)}>Sau →</button>
                                 </div>
                             </div>
-                        </section>
-                    </>
+                        </div>
+                    </section>
                 )}
 
                 {/* ===== SESSIONS TAB ===== */}
@@ -1148,35 +1664,51 @@ function Admin({ ctx }) {
                             <div><p className="muted">Sessions</p><h3>Quản lý phiên kết nối</h3></div>
                             <div className="actions">
                                 <select className="input-inline" value={sessionFilters.status}
-                                    onChange={e => { setSessionFilters({ status: e.target.value }); setSessionPage(1) }}>
+                                    onChange={e => { setSessionFilters(p => ({ ...p, status: e.target.value })); setSessionPage(1) }}>
                                     <option value="">Tất cả</option>
                                     <option value="active">Active</option>
                                     <option value="stopped">Stopped</option>
                                     <option value="ended">Ended</option>
+                                    <option value="failed">Failed</option>
                                 </select>
+                                <input className="input-inline" placeholder="User ID" value={sessionFilters.user_id}
+                                    onChange={e => { setSessionFilters(p => ({ ...p, user_id: e.target.value })); setSessionPage(1) }} />
+                                <input className="input-inline" placeholder="Machine ID" value={sessionFilters.machine_id}
+                                    onChange={e => { setSessionFilters(p => ({ ...p, machine_id: e.target.value })); setSessionPage(1) }} />
                             </div>
                         </div>
                         <div className="table">
                             <div className="row head admin-session-row">
-                                <span>User</span><span>Machine</span><span>Status</span><span>Bắt đầu</span><span>Kết thúc</span><span>Traffic</span><span>Actions</span>
+                                <span>User</span><span>Machine</span><span>Status</span><span>Kết nối</span><span>Billing</span><span>Bắt đầu</span><span>Phí</span><span>Traffic</span><span>Actions</span>
                             </div>
                             {sessionLoading
-                                ? <SkeletonRows rowClass="admin-session-row" cols={7} count={sessionPageSize} />
+                                ? <SkeletonRows rowClass="admin-session-row" cols={9} count={sessionPageSize} />
                                 : sessions.map(s => (
                                     <div key={s.id} className="row admin-session-row">
                                         <span className="truncate" style={{ fontSize: '0.84rem' }}>{s.user_email || (s.user_id?.slice(0, 8) + '...')}</span>
                                         <span className="code">{s.machine_code || '-'}</span>
                                         <span className={`pill ${s.status === 'active' ? 'success' : 'ghost'}`}>{s.status}</span>
+                                        <span className="pill ghost">{s.connection_state || '-'}</span>
+                                        <span style={{ fontSize: '0.76rem' }}>
+                                            <span className="pill ghost">{s.billing_state || '-'}</span>
+                                            <span className="muted" style={{ display: 'block', marginTop: 4 }}>{s.lifecycle_state || '-'}</span>
+                                        </span>
                                         <span style={{ fontSize: '0.8rem' }}>{s.started_at ? new Date(s.started_at).toLocaleString('vi-VN') : '-'}</span>
-                                        <span style={{ fontSize: '0.8rem', color: '#5c6578' }}>{s.ended_at ? new Date(s.ended_at).toLocaleString('vi-VN') : '-'}</span>
+                                        <span>
+                                            <span className="money">{formatMoney(s.charged_amount || 0)}</span>
+                                            <span className="muted" style={{ display: 'block', fontSize: '0.74rem' }}>{s.charged_minutes || 0} phút</span>
+                                        </span>
                                         <span style={{ fontSize: '0.78rem' }}>
                                             <span style={{ color: '#00b8d9' }}>↑{((s.bytes_up || 0) / 1048576).toFixed(1)}MB</span>
                                             {' '}
                                             <span style={{ color: '#3dd598' }}>↓{((s.bytes_down || 0) / 1048576).toFixed(1)}MB</span>
                                         </span>
-                                        <span>
+                                        <span className="actions">
                                             {s.status === 'active' && (
                                                 <button className="btn danger small" onClick={() => handleStopSession(s.id, s.user_email)}>⏹️ Stop</button>
+                                            )}
+                                            {s.status === 'active' && (
+                                                <button className="btn ghost small" onClick={() => handleFailSession(s)}>Fail</button>
                                             )}
                                         </span>
                                     </div>
@@ -1276,8 +1808,8 @@ function Admin({ ctx }) {
                                         ? <div className="row"><span style={{ color: '#5c6578', gridColumn: 'span 7' }}>Không có giao dịch</span></div>
                                         : billingTransactions.map(t => (
                                             <div key={t.id} className="row admin-billing-row clickable"
-                                                onClick={() => { setSelectedTransaction(t); dialogRef.current?.showModal() }}>
-                                                <span className="truncate" style={{ fontSize: '0.82rem' }}>{t.user_id?.slice(0, 8)}...</span>
+                                                onClick={() => openTransactionDetail(t)}>
+                                                <span className="truncate" style={{ fontSize: '0.82rem' }}>{t.user_email || `${t.user_id?.slice(0, 8)}...`}</span>
                                                 <span className="money">{formatMoney(t.amount)}</span>
                                                 <span style={{ fontSize: '0.85rem' }}>{formatMoney(t.balance_before)}</span>
                                                 <span style={{ fontSize: '0.85rem', color: '#3dd598' }}>{formatMoney(t.balance_after)}</span>
@@ -1420,7 +1952,7 @@ function Admin({ ctx }) {
                                             <p className="setting-desc">Người dùng phải nạp ít nhất số tiền này mỗi lần giao dịch</p>
                                         </div>
                                         <div className="setting-control">
-                                            <input type="number" min="1000" step="1000" value={settingsForm.min_topup_amount}
+                                            <input type="number" min="10000" step="1000" value={settingsForm.min_topup_amount}
                                                 onChange={e => handleSettingsChange('min_topup_amount', Number(e.target.value))} style={{ width: 100 }} />
                                             <span className="setting-unit">VND</span>
                                         </div>
@@ -1444,7 +1976,7 @@ function Admin({ ctx }) {
                                             <p className="setting-desc">Phiên kết nối sẽ tự động kết thúc sau khoảng thời gian này</p>
                                         </div>
                                         <div className="setting-control">
-                                            <input type="number" min="1" max="720" value={settingsForm.session_timeout_hours}
+                                            <input type="number" min="1" max="168" value={settingsForm.session_timeout_hours}
                                                 onChange={e => handleSettingsChange('session_timeout_hours', Number(e.target.value))} />
                                             <span className="setting-unit">giờ</span>
                                         </div>
@@ -1467,13 +1999,41 @@ function Admin({ ctx }) {
                 )}
 
                 {/* Transaction detail dialog */}
-                <TransactionDialog transaction={selectedTransaction} dialogRef={dialogRef} />
+                <TransactionDialog transaction={selectedTransaction} dialogRef={dialogRef} loading={transactionLoading} />
             </main>
 
             {/* ---- CUSTOM MODALS ---- */}
+            {selectedUser && (
+                <UserDetailModal
+                    user={selectedUser}
+                    currentUserId={ctx?.user?.id}
+                    token={token}
+                    onClose={() => setSelectedUser(null)}
+                    onTopup={handleAdminTopup}
+                    onBalanceAdjust={handleBalanceAdjust}
+                    onStatusChange={requestUserStatusChange}
+                />
+            )}
+
+            {machineEditor && (
+                <MachineFormModal
+                    machine={machineEditor}
+                    onClose={() => setMachineEditor(null)}
+                    onSubmit={handleMachineEditorSubmit}
+                />
+            )}
+
+            {machineCreatorOpen && (
+                <MachineFormModal
+                    onClose={() => setMachineCreatorOpen(false)}
+                    onSubmit={handleCreateMachine}
+                />
+            )}
+
             {topupModal && (
                 <TopupModal
                     user={topupModal}
+                    mode={topupModal.mode}
                     onClose={() => setTopupModal(null)}
                     onConfirm={handleTopupConfirm}
                 />

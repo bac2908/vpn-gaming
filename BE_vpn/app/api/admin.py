@@ -35,10 +35,10 @@ def admin_list_users(
 def admin_update_user(
     user_id: UUID,
     payload: schemas.UserUpdateRequest,
-    _: models.User = Depends(require_admin),
+    admin_user: models.User = Depends(require_admin),
     admin_service: AdminService = Depends(get_admin_service),
 ):
-    return admin_service.update_user(user_id, payload)
+    return admin_service.update_user(user_id, payload, admin_user)
 
 
 @router.post("/users/{user_id}/topup", response_model=schemas.TopupTransactionOut)

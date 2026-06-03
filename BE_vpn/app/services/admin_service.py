@@ -1,4 +1,7 @@
 import logging
+import csv
+import io
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -15,6 +18,19 @@ class AdminService:
         self.repo = AdminRepository(db)
         self.logger = logging.getLogger(__name__)
 
+    def _topup_out(
+        self,
+        item: models.TopupTransaction,
+        users_map: dict[UUID, models.User] | None = None,
+    ) -> schemas.TopupTransactionOut:
+        if not hasattr(item, "user_id"):
+            return item
+        user = users_map.get(item.user_id) if users_map else None
+        amount = -(item.amount or 0) if item.provider == "admin_debit" else item.amount
+        return schemas.TopupTransactionOut.from_orm(item).copy(
+            update={"user_email": user.email if user else None, "amount": amount}
+        )
+
     def list_users(
         self,
         page: int,
@@ -26,10 +42,21 @@ class AdminService:
         items, total = self.repo.list_users(page, page_size, email, role, status_filter)
         return schemas.UsersPage(items=items, total=total, page=page, page_size=page_size)
 
-    def update_user(self, user_id: UUID, payload: schemas.UserUpdateRequest) -> schemas.AdminUserOut:
+    def update_user(
+        self,
+        user_id: UUID,
+        payload: schemas.UserUpdateRequest,
+        admin_user: models.User | None = None,
+    ) -> schemas.AdminUserOut:
         user = self.repo.get_user_by_id(user_id)
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay nguoi dung")
+
+        if admin_user and user.id == admin_user.id and payload.status and payload.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Khong the vo hieu hoa tai khoan admin hien tai",
+            )
 
         if payload.display_name is not None:
             user.display_name = payload.display_name
@@ -52,10 +79,14 @@ class AdminService:
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay nguoi dung")
 
-        if payload.amount <= 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="So tien phai lon hon 0")
+        if payload.amount == 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="So tien dieu chinh phai khac 0")
+        if payload.amount < 0 and (user.balance or 0) + payload.amount < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Khong the tru qua so du hien tai")
 
-        description = payload.description or f"Admin {admin_user.email} nap tien"
+        description = payload.description or (
+            f"Admin {admin_user.email} {'nap tien' if payload.amount > 0 else 'tru tien'}"
+        )
         topup, _, new_balance = self.repo.create_admin_topup(user, payload.amount, description)
         self.repo.commit()
         self.repo.refresh(topup)
@@ -67,7 +98,7 @@ class AdminService:
             payload.amount,
             new_balance,
         )
-        return topup
+        return self._topup_out(topup, {user.id: user})
 
     def list_machines(
         self,
@@ -125,6 +156,8 @@ class AdminService:
 
     def dashboard(self) -> schemas.AdminDashboardOut:
         data = self.repo.dashboard_summary()
+        recent_transactions = data["recent_transactions"]
+        users_map = self.repo.get_users_by_ids([item.user_id for item in recent_transactions])
         return schemas.AdminDashboardOut(
             total_users=data["total_users"],
             active_users=data["active_users"],
@@ -138,7 +171,7 @@ class AdminService:
             total_revenue=data["total_revenue"],
             today_revenue=data["today_revenue"],
             month_revenue=data["month_revenue"],
-            recent_transactions=[schemas.TopupTransactionOut.from_orm(item) for item in data["recent_transactions"]],
+            recent_transactions=[self._topup_out(item, users_map) for item in recent_transactions],
         )
 
     def machine_statistics(self) -> schemas.MachineStatisticsOut:
@@ -225,12 +258,20 @@ class AdminService:
         date_to: datetime | None,
     ):
         items = self.repo.list_transactions_for_export(status_filter, provider, date_from, date_to)
+        users_map = self.repo.get_users_by_ids([item.user_id for item in items])
 
         def iter_csv():
-            header = ["User", "Amount", "Provider", "Status", "CreatedAt", "Description"]
-            yield ",".join(header) + "\n"
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+            header = ["UserEmail", "UserId", "Amount", "Provider", "Status", "CreatedAt", "Description"]
+            writer.writerow(header)
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
             for item in items:
+                user = users_map.get(item.user_id)
                 row = [
+                    user.email if user else "",
                     str(item.user_id),
                     str(item.amount),
                     item.provider or "",
@@ -238,7 +279,10 @@ class AdminService:
                     item.created_at.strftime("%Y-%m-%d %H:%M:%S") if item.created_at else "",
                     item.description or "",
                 ]
-                yield ",".join(row) + "\n"
+                writer.writerow(row)
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
 
         return iter_csv
 
@@ -261,13 +305,20 @@ class AdminService:
             date_from=date_from,
             date_to=date_to,
         )
-        return schemas.TopupHistoryPage(items=items, total=total, page=page, page_size=page_size)
+        users_map = self.repo.get_users_by_ids([item.user_id for item in items])
+        return schemas.TopupHistoryPage(
+            items=[self._topup_out(item, users_map) for item in items],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
 
     def get_transaction_detail(self, transaction_id: str) -> schemas.TopupTransactionOut:
         transaction = self.repo.get_transaction_by_id(transaction_id)
         if not transaction:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay giao dich")
-        return transaction
+        users_map = self.repo.get_users_by_ids([transaction.user_id])
+        return self._topup_out(transaction, users_map)
 
     def get_settings(self) -> schemas.AdminSettingsOut:
         settings = self.repo.get_admin_settings()
