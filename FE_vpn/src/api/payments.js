@@ -23,3 +23,10 @@ export async function getTopupHistory({ page = 1, pageSize = 10, status } = {}, 
         token,
     })
 }
+
+export async function getTopupSummary(token) {
+    return request('/payments/topup-summary', {
+        method: 'GET',
+        token,
+    })
+}

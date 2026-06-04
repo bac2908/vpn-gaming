@@ -3,6 +3,15 @@
 // - Trong production: sử dụng '' (empty) để gọi qua nginx reverse proxy cùng domain
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
+class ApiError extends Error {
+    constructor(message, { status, data } = {}) {
+        super(message)
+        this.name = 'ApiError'
+        this.status = status
+        this.data = data
+    }
+}
+
 async function request(path, { method = 'GET', headers = {}, body, token } = {}) {
     const finalHeaders = { ...headers }
     if (body && !finalHeaders['Content-Type']) {
@@ -29,10 +38,15 @@ async function request(path, { method = 'GET', headers = {}, body, token } = {})
 
     if (!response.ok) {
         const message = data?.detail || data?.message || `Request failed (${response.status})`
-        throw new Error(message)
+        if (token && response.status === 401 && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('vpngaming:auth-expired', {
+                detail: { message, path, status: response.status },
+            }))
+        }
+        throw new ApiError(message, { status: response.status, data })
     }
 
     return data
 }
 
-export { request, API_BASE_URL }
+export { request, API_BASE_URL, ApiError }

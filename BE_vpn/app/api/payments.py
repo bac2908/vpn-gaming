@@ -51,3 +51,11 @@ def get_topup_history(
         page_size=page_size,
         status_filter=status_filter,
     )
+
+
+@router.get("/topup-summary", response_model=schemas.TopupSummaryOut)
+def get_topup_summary(
+    current_user: models.User = Depends(get_current_user),
+    payment_service: PaymentService = Depends(get_payment_service),
+):
+    return payment_service.get_topup_summary(current_user)

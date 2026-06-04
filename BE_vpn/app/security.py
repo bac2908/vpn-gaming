@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from jose import jwt, JWTError
+from jose import jwt, JWTError, ExpiredSignatureError
 from passlib.hash import bcrypt
 from app.config import get_settings
 
@@ -27,5 +27,7 @@ def create_access_token(sub: str, expires_minutes: int | None = None) -> str:
 def decode_access_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_alg])
+    except ExpiredSignatureError as exc:
+        raise ValueError("Phiên đăng nhập đã hết hạn") from exc
     except JWTError as exc:
         raise ValueError("Token không hợp lệ") from exc

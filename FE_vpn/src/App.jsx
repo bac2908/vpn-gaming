@@ -81,7 +81,7 @@ function App() {
   })() : null
 
   const [token, setToken] = useState(storedToken)
-  const [user, setUser] = useState(storedUser || (storedToken ? userFromToken(storedToken, storedEmail) : null))
+  const [user, setUser] = useState(storedToken ? (storedUser || userFromToken(storedToken, storedEmail)) : null)
   const [session, setSession] = useState(DEFAULT_SESSION)
   const [topupOpen, setTopupOpen] = useState(false)
   const [topupAmount, setTopupAmount] = useState(50000)
@@ -154,6 +154,29 @@ function App() {
     setSession(DEFAULT_SESSION)
   }, [token, setToken, setUser, setSession])
 
+  const expireAuthSession = useCallback(() => {
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (currentPath.startsWith('/app') || currentPath.startsWith('/admin')) {
+      window.sessionStorage?.setItem('post_login_redirect', currentPath)
+    }
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_email')
+    localStorage.removeItem('auth_user')
+    localStorage.removeItem('active_session')
+    setToken(null)
+    setUser(null)
+    setSession(DEFAULT_SESSION)
+  }, [setToken, setUser, setSession])
+
+  useEffect(() => {
+    const handleAuthExpired = (event) => {
+      console.warn('Auth session expired or invalid', event.detail)
+      expireAuthSession()
+    }
+    window.addEventListener('vpngaming:auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('vpngaming:auth-expired', handleAuthExpired)
+  }, [expireAuthSession])
+
   useEffect(() => {
     if (!token || user?.id) return
     fetchMe(token)
@@ -163,10 +186,9 @@ function App() {
       })
       .catch((err) => {
         console.warn('Fetch me failed', err)
-        setToken(null)
-        setUser(null)
+        expireAuthSession()
       })
-  }, [token, user, storedEmail, setUser, setToken])
+  }, [token, user, storedEmail, setUser, expireAuthSession])
 
   useEffect(() => {
     if (!token || !user?.id) {
@@ -182,8 +204,11 @@ function App() {
       })
       .catch((err) => {
         console.warn('Refresh user profile failed', err)
+        if (err?.status === 401) {
+          expireAuthSession()
+        }
       })
-  }, [token, user, storedEmail, setUser])
+  }, [token, user, storedEmail, setUser, expireAuthSession])
 
   // Refresh balance when needed
   const refreshBalance = useCallback(async () => {
@@ -195,8 +220,11 @@ function App() {
       }
     } catch (err) {
       console.warn('Refresh balance failed', err)
+      if (err?.status === 401) {
+        expireAuthSession()
+      }
     }
-  }, [token, user, setUser])
+  }, [token, user, setUser, expireAuthSession])
 
   const context = useMemo(
     () => ({
@@ -548,9 +576,58 @@ function formatCompactBalance(amount) {
   return `${value}đ`
 }
 
+function formatSessionChip(session, now) {
+  const isActive = session?.status === 'active' && !session?.ended_at
+  if (!isActive) {
+    return {
+      desktop: 'Chưa chơi',
+      mobile: '--',
+      title: 'Chưa có phiên đang chơi',
+    }
+  }
+
+  const startedAt = session?.billing_started_at || session?.started_at || session?.start_time || session?.created_at
+  const start = startedAt ? new Date(startedAt) : null
+  if (!start || Number.isNaN(start.getTime())) {
+    return {
+      desktop: 'Đang chơi',
+      mobile: 'Live',
+      title: 'Phiên đang hoạt động',
+    }
+  }
+
+  const totalSeconds = Math.max(0, Math.floor((now - start.getTime()) / 1000))
+  if (totalSeconds < 60) {
+    return {
+      desktop: 'Đang chơi',
+      mobile: 'Live',
+      title: 'Phiên đang hoạt động',
+    }
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+
+  return {
+    desktop: hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`,
+    mobile: hours > 0 ? `${hours}h` : `${minutes}p`,
+    title: 'Thời gian phiên đang chơi',
+  }
+}
+
 function TopBar({ user, session, onTopup, onLogout, onProfile, onPassword }) {
   const [accountOpen, setAccountOpen] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const menuRef = useRef(null)
+  const sessionChip = formatSessionChip(session, now)
+
+  useEffect(() => {
+    const isActive = session?.status === 'active' && !session?.ended_at
+    if (!isActive) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [session?.status, session?.ended_at, session?.id])
 
   const getRoleLabel = (role) => {
     if (role === 'admin') return 'Quản trị viên'
@@ -590,11 +667,11 @@ function TopBar({ user, session, onTopup, onLogout, onProfile, onPassword }) {
 
         <div className="topbar-actions">
           <div className="topbar-status-group" aria-label="Trạng thái tài khoản">
-            <div className="launcher-chip">
+            <div className="launcher-chip" title={sessionChip.title}>
               <LauncherIcon name="clock" />
               <strong>
-                <span className="desktop-value">{session?.remainingMinutes || 0}m</span>
-                <span className="mobile-value">{session?.remainingMinutes || 0}p</span>
+                <span className="desktop-value">{sessionChip.desktop}</span>
+                <span className="mobile-value">{sessionChip.mobile}</span>
               </strong>
             </div>
             <div className="launcher-chip balance">

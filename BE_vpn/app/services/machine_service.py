@@ -351,6 +351,29 @@ class MachineService:
             return started_at
         return billing_started_at or started_at
 
+    def _session_play_duration_seconds(self, session: models.VpnSession, now: datetime) -> int:
+        billing_started_at = self._utc_naive(getattr(session, "billing_started_at", None))
+        if billing_started_at:
+            started_at = self._utc_naive(getattr(session, "started_at", None))
+            start_time = max(started_at, billing_started_at) if started_at else billing_started_at
+            end_time = self._utc_naive(getattr(session, "ended_at", None)) or now
+            return max(0, int((end_time - start_time).total_seconds()))
+
+        counted_minutes = int(getattr(session, "charged_minutes", 0) or 0) + int(getattr(session, "free_minutes_used", 0) or 0)
+        if counted_minutes > 0:
+            return counted_minutes * 60
+
+        return 0
+
+    def _session_activity_day_key(self, session: models.VpnSession) -> str | None:
+        activity_at = (
+            self._utc_aware(getattr(session, "billing_started_at", None))
+            or self._utc_aware(getattr(session, "started_at", None))
+        )
+        if not activity_at:
+            return None
+        return billing_day(activity_at).isoformat()
+
     def _normalize_shifted_billing_start(self, session: models.VpnSession) -> bool:
         started_at = self._utc_naive(getattr(session, "started_at", None))
         billing_started_at = self._utc_naive(getattr(session, "billing_started_at", None))
@@ -557,6 +580,7 @@ class MachineService:
         reason: str,
         terminal_status: str = "stopped",
         current_user: models.User | None = None,
+        retain_snapshot: bool = False,
     ) -> None:
         if session.status != "active" or session.ended_at is not None:
             return
@@ -575,7 +599,7 @@ class MachineService:
         session.lifecycle_state = "failed" if terminal_status == "failed" else "stopped"
         session.billing_state = "stopped"
         session.connection_state = "disconnected" if getattr(session, "disconnected_at", None) else getattr(session, "connection_state", "connected")
-        self._apply_snapshot_policy(session, ended_at, terminal_status)
+        self._apply_snapshot_policy(session, ended_at, terminal_status, retain_snapshot=retain_snapshot)
         if terminal_status == "failed":
             self._refund_failed_short_session(session, ended_at, reason, current_user)
         self.repo.db.add(session)
@@ -588,10 +612,16 @@ class MachineService:
                 level="warning",
             )
 
-    def _apply_snapshot_policy(self, session: models.VpnSession, ended_at: datetime, terminal_status: str) -> None:
+    def _apply_snapshot_policy(
+        self,
+        session: models.VpnSession,
+        ended_at: datetime,
+        terminal_status: str,
+        retain_snapshot: bool = False,
+    ) -> None:
         limit = int(getattr(session, "snapshot_active_limit", 0) or 0)
         user_id = getattr(session, "user_id", None)
-        if terminal_status == "stopped" and limit > 0:
+        if terminal_status == "stopped" and retain_snapshot and limit > 0:
             session.snapshot_retained = True
             session.snapshot_archived_at = None
         else:
@@ -708,12 +738,7 @@ class MachineService:
         result_items: list[schemas.SessionHistoryItemOut] = []
         for item in items:
             machine = machines_map.get(item.machine_id) if item.machine_id else None
-            duration_seconds = None
-            if item.started_at:
-                start_time = self._utc_naive(item.started_at)
-                end_time = self._utc_naive(item.ended_at) or now
-                if start_time:
-                    duration_seconds = max(0, int((end_time - start_time).total_seconds()))
+            duration_seconds = self._session_play_duration_seconds(item, now)
 
             can_resume = (
                 not has_active_session
@@ -730,6 +755,7 @@ class MachineService:
                     status=item.status,
                     started_at=item.started_at,
                     ended_at=item.ended_at,
+                    billing_started_at=item.billing_started_at,
                     duration_seconds=duration_seconds,
                     ip_address=item.ip_address,
                     vpn_online=item.vpn_online,
@@ -758,6 +784,140 @@ class MachineService:
 
         return schemas.SessionHistoryPage(items=result_items, total=total, page=page, page_size=page_size)
 
+    def get_user_session_history_summary(self, current_user: models.User) -> schemas.SessionHistorySummaryOut:
+        sessions = self.repo.list_user_sessions_for_summary(current_user.id)
+        machine_ids = [item.machine_id for item in sessions if item.machine_id]
+        machines_map = self.repo.get_machines_by_ids(machine_ids)
+        latest_ended_map = self.repo.get_latest_ended_session_ids_for_user(current_user.id, machine_ids)
+        has_active_session = self.repo.get_active_session_for_user(current_user.id) is not None
+        now = self._utc_naive(self._utc_now()) or datetime.utcnow()
+
+        today = billing_day(self._utc_now())
+        recent_days = [today - timedelta(days=6 - idx) for idx in range(7)]
+        bucket_map = {
+            day.isoformat(): {
+                "date": day.isoformat(),
+                "play_seconds": 0,
+                "session_count": 0,
+                "charged_amount": 0,
+            }
+            for day in recent_days
+        }
+        machine_totals: dict[str, dict] = {}
+
+        total_play_seconds = 0
+        total_charged_minutes = 0
+        total_free_minutes = 0
+        total_charged_amount = 0
+        total_refunded_amount = 0
+        active_sessions = 0
+        stopped_sessions = 0
+        failed_sessions = 0
+        streamed_sessions = 0
+        pre_stream_sessions = 0
+        resumable_sessions = 0
+
+        for session in sessions:
+            duration_seconds = self._session_play_duration_seconds(session, now)
+            charged_amount = int(getattr(session, "charged_amount", 0) or 0)
+            refunded_amount = int(getattr(session, "refunded_amount", 0) or 0)
+            total_play_seconds += duration_seconds
+            total_charged_minutes += int(getattr(session, "charged_minutes", 0) or 0)
+            total_free_minutes += int(getattr(session, "free_minutes_used", 0) or 0)
+            total_charged_amount += charged_amount
+            total_refunded_amount += refunded_amount
+
+            if session.status == "active" and session.ended_at is None:
+                active_sessions += 1
+            elif session.status in {"stopped", "ended"}:
+                stopped_sessions += 1
+            elif session.status == "failed":
+                failed_sessions += 1
+
+            if duration_seconds > 0:
+                streamed_sessions += 1
+                day_key = self._session_activity_day_key(session)
+                if day_key in bucket_map:
+                    bucket_map[day_key]["play_seconds"] += duration_seconds
+                    bucket_map[day_key]["session_count"] += 1
+                    bucket_map[day_key]["charged_amount"] += max(0, charged_amount - refunded_amount)
+
+                machine = machines_map.get(session.machine_id) if session.machine_id else None
+                machine_key = str(session.machine_id or "unknown")
+                current = machine_totals.setdefault(
+                    machine_key,
+                    {
+                        "machine_id": session.machine_id,
+                        "code": getattr(machine, "code", None) or "Chưa gắn máy",
+                        "gpu": getattr(machine, "gpu", None),
+                        "location": getattr(machine, "location", None),
+                        "region": getattr(machine, "region", None),
+                        "play_seconds": 0,
+                        "session_count": 0,
+                        "charged_amount": 0,
+                    },
+                )
+                current["play_seconds"] += duration_seconds
+                current["session_count"] += 1
+                current["charged_amount"] += max(0, charged_amount - refunded_amount)
+            else:
+                pre_stream_sessions += 1
+
+            machine = machines_map.get(session.machine_id) if session.machine_id else None
+            can_resume = (
+                not has_active_session
+                and session.ended_at is not None
+                and session.machine_id is not None
+                and latest_ended_map.get(session.machine_id) == session.id
+                and machine is not None
+                and machine.status == "idle"
+            )
+            if can_resume:
+                resumable_sessions += 1
+
+        net_charged_amount = max(0, total_charged_amount - total_refunded_amount)
+        average_play_seconds = round(total_play_seconds / streamed_sessions) if streamed_sessions else 0
+        daily_buckets = [schemas.SessionDailyBucketOut(**bucket_map[day.isoformat()]) for day in recent_days]
+        top_machines = [
+            schemas.SessionMachineSummaryOut(**item)
+            for item in sorted(
+                machine_totals.values(),
+                key=lambda value: (value["play_seconds"], value["session_count"]),
+                reverse=True,
+            )[:5]
+        ]
+
+        status_counts = [
+            schemas.SessionStatusSummaryOut(key="streamed", label="Đã stream", count=streamed_sessions),
+            schemas.SessionStatusSummaryOut(key="pre_stream", label="Chưa stream", count=pre_stream_sessions),
+            schemas.SessionStatusSummaryOut(key="active", label="Đang chạy", count=active_sessions),
+            schemas.SessionStatusSummaryOut(key="resume", label="Có snapshot", count=resumable_sessions),
+            schemas.SessionStatusSummaryOut(key="failed", label="Lỗi", count=failed_sessions),
+        ]
+
+        return schemas.SessionHistorySummaryOut(
+            total_sessions=len(sessions),
+            active_sessions=active_sessions,
+            stopped_sessions=stopped_sessions,
+            failed_sessions=failed_sessions,
+            resumable_sessions=resumable_sessions,
+            streamed_sessions=streamed_sessions,
+            pre_stream_sessions=pre_stream_sessions,
+            total_play_seconds=total_play_seconds,
+            average_play_seconds=average_play_seconds,
+            total_charged_minutes=total_charged_minutes,
+            total_free_minutes=total_free_minutes,
+            total_charged_amount=total_charged_amount,
+            total_refunded_amount=total_refunded_amount,
+            net_charged_amount=net_charged_amount,
+            week_play_seconds=sum(bucket.play_seconds for bucket in daily_buckets),
+            week_charged_amount=sum(bucket.charged_amount for bucket in daily_buckets),
+            week_session_count=sum(bucket.session_count for bucket in daily_buckets),
+            daily_buckets=daily_buckets,
+            top_machines=top_machines,
+            status_counts=status_counts,
+        )
+
     def start_machine_session(self, machine_id: UUID, current_user: models.User) -> schemas.SessionOut:
         machine = self.repo.get_machine_by_id(machine_id)
         if not machine:
@@ -779,7 +939,12 @@ class MachineService:
         self._attach_session_billing_view(session, current_user)
         return session
 
-    def stop_user_session(self, session_id: UUID, current_user: models.User) -> schemas.SessionOut:
+    def stop_user_session(
+        self,
+        session_id: UUID,
+        current_user: models.User,
+        retain_snapshot: bool = False,
+    ) -> schemas.SessionOut:
         session = self.repo.get_session_by_id(session_id)
         if not session:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay session")
@@ -790,7 +955,13 @@ class MachineService:
 
         self._bill_session_until_now(session, current_user)
         if session.status == "active" and session.ended_at is None:
-            self._finish_session(session, self._utc_now(), "user_stopped", current_user=current_user)
+            self._finish_session(
+                session,
+                self._utc_now(),
+                "user_stopped",
+                current_user=current_user,
+                retain_snapshot=retain_snapshot,
+            )
 
         self.repo.commit()
         self.repo.refresh(session)

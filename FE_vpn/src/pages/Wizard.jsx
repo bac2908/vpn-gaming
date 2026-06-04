@@ -168,13 +168,13 @@ const initialLaunchFlow = {
 
 function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSunshinePaired, pairingSunshine }) {
     const isPlay = type === 'play'
-    const title = isPlay ? 'Moonlight / Sunshine' : 'VPN route'
+    const title = isPlay ? 'Pair Moonlight / Sunshine' : 'VPN route'
     const lines = isPlay
         ? [
-            'Mở Moonlight trên thiết bị chơi.',
-            'Nếu chưa thấy máy, thêm thủ công bằng IP local.',
-            'Khi Moonlight hiện PIN, mở Sunshine và nhập PIN đó.',
-            'Sau khi pair xong, đánh dấu Sunshine đã ghép pin.',
+            'Copy IP local của Gaming VM.',
+            'Mở app Moonlight trên thiết bị chơi, chọn Add PC và nhập IP local.',
+            'Khi Moonlight hiện PIN, mở Sunshine Web và nhập PIN đó.',
+            'Sau khi pair thành công, quay lại web bấm Xác nhận đã ghép Sunshine.',
         ]
         : [
             'Tải file VPN profile của phiên hiện tại.',
@@ -198,15 +198,15 @@ function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSun
                 </ol>
                 {isPlay && (
                     <div className="actions">
-                        <button type="button" className="btn secondary" onClick={onCopyIp} disabled={!session?.ip_address}>Copy IP</button>
-                        <button type="button" className="btn ghost" onClick={onOpenSunshine} disabled={!session?.ip_address}>Mở Sunshine</button>
+                        <button type="button" className="btn secondary" onClick={onCopyIp} disabled={!session?.ip_address}>Copy IP VM</button>
+                        <button type="button" className="btn ghost" onClick={onOpenSunshine} disabled={!session?.ip_address}>Mở Sunshine Web</button>
                         <button
                             type="button"
                             className="btn primary"
                             onClick={onMarkSunshinePaired}
                             disabled={!session?.ip_address || session?.sunshine_paired || pairingSunshine}
                         >
-                            {pairingSunshine ? 'Đang cập nhật...' : 'Đã ghép Sunshine'}
+                            {pairingSunshine ? 'Đang cập nhật...' : 'Xác nhận đã ghép Sunshine'}
                         </button>
                     </div>
                 )}
@@ -547,7 +547,7 @@ function Wizard({ ctx }) {
             })
             setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
             addLaunchLog('VPN profile', 'VPN profile downloaded', 'OK')
-            setActionMessage('Đã tải VPN profile cho phiên hiện tại.')
+            setActionMessage('Đã tải VPN profile. Import file .ovpn vào OpenVPN, bật kết nối rồi quay lại bấm Tôi đã kết nối VPN.')
         } catch (err) {
             setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
             setError(err.message || 'Không thể tải VPN profile')
@@ -665,7 +665,7 @@ function Wizard({ ctx }) {
 
     const handleMarkSunshinePaired = async () => {
         if (!session?.id || !vpnOnline) {
-            setError('Cần VPN online trước khi đánh dấu Sunshine đã ghép pin.')
+            setError('Cần VPN online trước khi xác nhận Sunshine đã ghép pin.')
             return
         }
 
@@ -749,15 +749,19 @@ function Wizard({ ctx }) {
 
         setStopping(true)
         try {
-            const stopped = await stopSession(session.id, ctx?.token)
+            const stopped = await stopSession(session.id, ctx?.token, { retainSnapshot: mode === 'snapshot' })
             localStorage.removeItem('active_session')
             setSession(stopped)
             setLastEndedSession(stopped)
-            setMachine((prev) => prev ? { ...prev, status: 'suspended', cooldown_until: stopped?.ended_at } : prev)
+            setMachine((prev) => prev ? {
+                ...prev,
+                status: stopped?.snapshot_retained ? 'suspended' : 'idle',
+                cooldown_until: stopped?.snapshot_retained ? stopped?.ended_at : null,
+            } : prev)
             setActionMessage(
                 stopped?.snapshot_retained
                     ? 'Đã tạm dừng phiên và lưu snapshot. Bạn có thể resume từ lịch sử hoặc danh sách máy.'
-                    : 'Đã dừng phiên. Máy đã được trả về trạng thái trống.',
+                    : 'Đã dừng phiên. Lần sau bạn sẽ khởi tạo phiên mới từ đầu.',
             )
         } catch (err) {
             setError(err.message || 'Không thể dừng phiên')
@@ -1097,8 +1101,15 @@ function Wizard({ ctx }) {
                     <div className="sl-panel sl-next-card">
                         <div>
                             <p className="sl-next-kicker">TIẾP THEO</p>
-                            <h3>{vpnOnline ? 'Mở Moonlight' : 'Kết nối VPN'}</h3>
-                            <span>{vpnOnline ? 'Mở Sunshine để pair thiết bị rồi vào Moonlight.' : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
+                            <h3>{vpnOnline ? 'Pair Moonlight' : 'Kết nối VPN'}</h3>
+                            <span>{vpnOnline ? 'Copy IP, thêm PC trong Moonlight, nhập PIN trong Sunshine rồi xác nhận đã pair.' : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
+                            {!vpnOnline && vpnProfileDownloaded && (
+                                <ol className="vpn-import-steps" aria-label="Các bước kết nối VPN">
+                                    <li><strong>1</strong><span>Mở file .ovpn vừa tải trong OpenVPN Connect.</span></li>
+                                    <li><strong>2</strong><span>Import profile, bật Connect và chờ trạng thái Connected.</span></li>
+                                    <li><strong>3</strong><span>Quay lại web, bấm Tôi đã kết nối VPN.</span></li>
+                                </ol>
+                            )}
                             <div className="gd-actions">
                                 {!vpnOnline && (
                                     <>
@@ -1106,18 +1117,18 @@ function Wizard({ ctx }) {
                                             {downloadingOvpn ? 'Đang tải...' : 'Tải VPN'}
                                         </button>
                                         <button type="button" className="btn primary" onClick={handleCheckVpnConnection} disabled={!isActiveSession || checkingVpn || !vpnProfileDownloaded}>
-                                            {checkingVpn ? 'Đang kiểm tra...' : vpnProfileDownloaded ? 'VPN đã kết nối' : 'Chưa tải VPN'}
+                                            {checkingVpn ? 'Đang kiểm tra...' : vpnProfileDownloaded ? 'Tôi đã kết nối VPN' : 'Chưa tải VPN'}
                                         </button>
                                     </>
                                 )}
                                 {vpnOnline && (
                                     <>
                                         <button type="button" className="btn primary outline-violet" onClick={() => setActiveGuide('play')}>
-                                            Mở Moonlight <ExternalLink className="h-4 w-4 inline ml-1" />
+                                            Hướng dẫn pair <ExternalLink className="h-4 w-4 inline ml-1" />
                                         </button>
                                         {!sunshinePaired && (
                                             <button type="button" className="btn secondary" onClick={handleMarkSunshinePaired} disabled={pairingSunshine}>
-                                                {pairingSunshine ? 'Đang cập nhật...' : 'Đã ghép Sunshine'}
+                                                {pairingSunshine ? 'Đang cập nhật...' : 'Xác nhận đã ghép Sunshine'}
                                             </button>
                                         )}
                                     </>
@@ -1167,7 +1178,7 @@ function Wizard({ ctx }) {
                             </div>
                             <div className="gd-actions">
                                 <button type="button" className="btn primary outline-violet" onClick={() => setActiveGuide('play')}>
-                                    Mở Moonlight <ExternalLink className="h-4 w-4 inline ml-1" />
+                                    Hướng dẫn mở Moonlight <ExternalLink className="h-4 w-4 inline ml-1" />
                                 </button>
                                 <button type="button" className="btn secondary" onClick={() => handleStopSession('snapshot')} disabled={stopping}>
                                     {stopping ? 'Đang xử lý...' : 'Tạm dừng / lưu snapshot'}

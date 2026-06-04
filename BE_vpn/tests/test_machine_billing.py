@@ -44,6 +44,129 @@ def test_free_quota_bills_without_charging_balance() -> None:
     service.repo.add_billing_event.assert_called_once()
 
 
+def _history_session(**overrides) -> SimpleNamespace:
+    now = datetime.utcnow()
+    data = {
+        "id": uuid4(),
+        "user_id": uuid4(),
+        "machine_id": None,
+        "status": "stopped",
+        "started_at": now - timedelta(hours=3),
+        "ended_at": now,
+        "ip_address": None,
+        "vpn_online": False,
+        "sunshine_paired": False,
+        "moonlight_ready": False,
+        "bytes_up": 0,
+        "bytes_down": 0,
+        "billing_tier": "free",
+        "play_rate_per_minute": 0,
+        "billing_started_at": None,
+        "charged_minutes": 0,
+        "charged_amount": 0,
+        "free_minutes_used": 0,
+        "trial_eligible": False,
+        "lifecycle_state": "stopped",
+        "billing_state": "stopped",
+        "connection_state": "disconnected",
+        "stop_reason": None,
+        "snapshot_retained": False,
+        "refunded_amount": 0,
+        "refund_status": "none",
+    }
+    data.update(overrides)
+    return SimpleNamespace(**data)
+
+
+def _history_result_for(session: SimpleNamespace):
+    service = _service()
+    user = SimpleNamespace(id=session.user_id, balance=0)
+    service.repo.list_user_sessions.return_value = ([session], 1)
+    service.repo.get_machines_by_ids.return_value = {}
+    service.repo.get_latest_ended_session_ids_for_user.return_value = {}
+    service.repo.get_active_session_for_user.return_value = None
+
+    return service.get_user_session_history(
+        current_user=user,
+        page=1,
+        page_size=10,
+        status_filter=None,
+        machine_id=None,
+        date_from=None,
+        date_to=None,
+        sort="recent",
+    )
+
+
+def test_history_duration_ignores_pre_stream_vm_lifetime() -> None:
+    now = datetime.utcnow()
+    session = _history_session(
+        started_at=now - timedelta(days=120),
+        ended_at=now,
+        billing_started_at=None,
+        charged_minutes=0,
+        free_minutes_used=0,
+    )
+
+    result = _history_result_for(session)
+
+    assert result.items[0].duration_seconds == 0
+
+
+def test_history_duration_uses_billing_start_when_stream_started() -> None:
+    now = datetime.utcnow()
+    session = _history_session(
+        started_at=now - timedelta(hours=5),
+        billing_started_at=now - timedelta(minutes=12),
+        ended_at=now,
+    )
+
+    result = _history_result_for(session)
+
+    assert result.items[0].duration_seconds == 12 * 60
+
+
+def test_history_summary_separates_streamed_and_pre_stream_sessions() -> None:
+    service = _service()
+    user_id = uuid4()
+    user = SimpleNamespace(id=user_id, balance=0)
+    now = datetime.utcnow()
+    streamed = _history_session(
+        user_id=user_id,
+        started_at=now - timedelta(hours=2),
+        billing_started_at=now - timedelta(minutes=10),
+        ended_at=now,
+        charged_minutes=3,
+        free_minutes_used=7,
+        charged_amount=300,
+        refunded_amount=50,
+    )
+    pre_stream = _history_session(
+        user_id=user_id,
+        started_at=now - timedelta(days=120),
+        ended_at=now,
+        billing_started_at=None,
+        charged_minutes=0,
+        free_minutes_used=0,
+        charged_amount=0,
+    )
+    service.repo.list_user_sessions_for_summary.return_value = [streamed, pre_stream]
+    service.repo.get_machines_by_ids.return_value = {}
+    service.repo.get_latest_ended_session_ids_for_user.return_value = {}
+    service.repo.get_active_session_for_user.return_value = None
+
+    summary = service.get_user_session_history_summary(user)
+
+    assert summary.total_sessions == 2
+    assert summary.streamed_sessions == 1
+    assert summary.pre_stream_sessions == 1
+    assert summary.total_play_seconds == 10 * 60
+    assert summary.average_play_seconds == 10 * 60
+    assert summary.total_charged_minutes == 3
+    assert summary.total_free_minutes == 7
+    assert summary.net_charged_amount == 250
+
+
 def test_payg_billing_stops_session_without_negative_balance() -> None:
     service = _service()
     user = SimpleNamespace(id=uuid4(), balance=50)
@@ -457,7 +580,54 @@ def test_stop_session_puts_machine_into_cooldown() -> None:
 
     assert session.status == "stopped"
     assert session.stop_reason == "user_stopped"
+    assert session.snapshot_retained is False
+    assert session.snapshot_archived_at is not None
+    assert machine.cooldown_until is not None
+    service.repo.set_machine_status.assert_called_once_with(machine, "suspended")
+
+
+def test_stop_session_retains_snapshot_when_requested() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    machine_id = uuid4()
+    now = datetime.utcnow()
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=machine_id,
+        status="active",
+        ended_at=None,
+        started_at=now,
+        billing_tier="basic",
+        play_rate_per_minute=35,
+        billing_started_at=now,
+        charged_minutes=0,
+        charged_amount=0,
+        free_minutes_used=0,
+        last_billed_at=None,
+        disconnected_at=None,
+        grace_period_seconds=300,
+        max_session_seconds=14400,
+        idle_stop_seconds=900,
+        idle_warning_seconds=600,
+        last_stream_activity_at=now,
+        cooldown_seconds=60,
+        snapshot_active_limit=1,
+        refunded_amount=0,
+    )
+    machine = SimpleNamespace(id=machine_id, status="running", cooldown_until=None)
+    service.repo.get_session_by_id.return_value = session
+    service.repo.get_machine_by_id.return_value = machine
+    service.repo.get_daily_billing_totals.return_value = (0, 0)
+    service.repo.list_retained_snapshots_for_user.return_value = []
+
+    service.stop_user_session(session.id, user, retain_snapshot=True)
+
+    assert session.status == "stopped"
+    assert session.stop_reason == "user_stopped"
     assert session.snapshot_retained is True
+    assert session.snapshot_archived_at is None
     assert machine.cooldown_until is not None
     service.repo.set_machine_status.assert_called_once_with(machine, "suspended")
 
