@@ -28,7 +28,7 @@ function History({ ctx }) {
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
     const [topupTotal, setTopupTotal] = useState(0)
-    const [statusFilter, setStatusFilter] = useState('')
+    const statusFilter = 'succeeded'
     const [overviewSessions, setOverviewSessions] = useState([])
     const [overviewTopups, setOverviewTopups] = useState([])
     const [sessionSummary, setSessionSummary] = useState(null)
@@ -341,7 +341,6 @@ function History({ ctx }) {
     const totalFreeMinutes = sessionSummary?.total_free_minutes ?? recentSessions.reduce((sum, session) => sum + Number(session?.free_minutes_used || 0), 0)
     const totalChargedMinutes = sessionSummary?.total_charged_minutes ?? recentSessions.reduce((sum, session) => sum + Number(session?.charged_minutes || 0), 0)
     const totalTopupAmount = topupSummary?.total_succeeded_amount ?? fallbackTotalTopupAmount
-    const pendingTopupAmount = topupSummary?.pending_amount ?? recentTopups.reduce((sum, tx) => tx?.status === 'pending' ? sum + Number(tx?.amount || 0) : sum, 0)
     const completionRate = totalSessionsCount ? Math.round((stoppedSessionsCount / totalSessionsCount) * 100) : 0
 
     const sessionBuckets = useMemo(() => {
@@ -511,7 +510,7 @@ function History({ ctx }) {
                     <div>
                         <span>Chi phí stream</span>
                         <strong>{summaryLoading ? '...' : formatMoney(totalSessionAmount)}</strong>
-                        <p>Nạp ví {formatCompactMoney(totalTopupAmount)}{pendingTopupAmount > 0 ? ` · chờ ${formatCompactMoney(pendingTopupAmount)}` : ''} · free {totalFreeMinutes}p · trả phí {totalChargedMinutes}p</p>
+                        <p>Nạp ví đã cộng {formatCompactMoney(totalTopupAmount)} · free {totalFreeMinutes}p · trả phí {totalChargedMinutes}p</p>
                     </div>
                 </div>
             </div>
@@ -809,25 +808,9 @@ function History({ ctx }) {
                     <div className="history-toolbar">
                         <div>
                             <strong>Nạp tiền</strong>
-                            <span>{topupTotal} giao dịch trong lịch sử</span>
+                            <span>{topupTotal} lần nạp đã cộng vào ví</span>
                         </div>
-                        <div className="history-filters">
-                            <label className="field">
-                                Trạng thái
-                                <select
-                                    value={statusFilter}
-                                    onChange={(e) => {
-                                        setStatusFilter(e.target.value)
-                                        setPage(1)
-                                    }}
-                                >
-                                    <option value="">Tất cả</option>
-                                    <option value="succeeded">Thành công</option>
-                                    <option value="pending">Đang xử lý</option>
-                                    <option value="failed">Thất bại</option>
-                                </select>
-                            </label>
-                        </div>
+                        <button className="btn ghost" onClick={ctx?.openTopup}>Nạp tiền</button>
                     </div>
 
                     {topupLoading && (
@@ -842,8 +825,8 @@ function History({ ctx }) {
                     {!topupLoading && !topupError && topupHistory.length === 0 && (
                         <div className="empty-state">
                             <div className="empty-icon">💸</div>
-                            <h3>Chưa có giao dịch nào</h3>
-                            <p className="muted">Nạp tiền để bắt đầu sử dụng dịch vụ</p>
+                            <h3>Chưa có lần nạp thành công</h3>
+                            <p className="muted">Chỉ các khoản đã thanh toán và cộng vào ví mới hiển thị ở đây.</p>
                             <button className="btn primary" onClick={ctx?.openTopup}>Nạp tiền ngay</button>
                         </div>
                     )}
@@ -871,7 +854,7 @@ function History({ ctx }) {
 
                             {/* Pagination */}
                             <div className="pagination">
-                                <div className="muted">Trang {page}/{totalPages} · {topupTotal} giao dịch</div>
+                                <div className="muted">Trang {page}/{totalPages} · {topupTotal} lần đã cộng ví</div>
                                 <div className="actions">
                                     <button
                                         className="btn ghost"

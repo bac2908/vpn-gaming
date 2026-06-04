@@ -37,27 +37,6 @@ class PaymentRepository:
         self.db.flush()
         return payment
 
-    def create_pending_topup(
-        self,
-        user_id: UUID,
-        payment_id: UUID,
-        amount: int,
-        balance_before: int,
-        description: str | None,
-    ) -> models.TopupTransaction:
-        topup = models.TopupTransaction(
-            user_id=user_id,
-            payment_id=payment_id,
-            amount=amount,
-            balance_before=balance_before,
-            balance_after=balance_before,
-            status="pending",
-            provider="momo",
-            description=description,
-        )
-        self.db.add(topup)
-        return topup
-
     def get_payment_by_order_id(self, order_id: str) -> models.Payment | None:
         return self.db.query(models.Payment).filter(models.Payment.order_id == order_id).first()
 
@@ -94,6 +73,34 @@ class PaymentRepository:
         self.db.add(topup)
         return old_balance, new_balance
 
+    def create_succeeded_topup_from_payment(
+        self,
+        payment: models.Payment,
+        user: models.User,
+        trans_id: str | None,
+        description: str | None = None,
+    ) -> tuple[models.TopupTransaction, int, int]:
+        old_balance = user.balance or 0
+        amount = int(payment.amount or 0)
+        new_balance = old_balance + amount
+        user.balance = new_balance
+        self.db.add(user)
+
+        topup = models.TopupTransaction(
+            user_id=user.id,
+            payment_id=payment.id,
+            amount=amount,
+            balance_before=old_balance,
+            balance_after=new_balance,
+            status="succeeded",
+            provider=payment.provider or "momo",
+            description=description,
+            trans_id=trans_id,
+            completed_at=datetime.utcnow(),
+        )
+        self.db.add(topup)
+        return topup, old_balance, new_balance
+
     def list_user_topup_history(
         self,
         user_id: UUID,
@@ -117,7 +124,10 @@ class PaymentRepository:
     def list_user_topups_for_summary(self, user_id: UUID) -> list[models.TopupTransaction]:
         return (
             self.db.query(models.TopupTransaction)
-            .filter(models.TopupTransaction.user_id == user_id)
+            .filter(
+                models.TopupTransaction.user_id == user_id,
+                models.TopupTransaction.status == "succeeded",
+            )
             .order_by(models.TopupTransaction.created_at.desc())
             .all()
         )

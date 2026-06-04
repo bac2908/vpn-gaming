@@ -1,494 +1,344 @@
-# Backend - VPN Gaming Platform
+# BE_vpn - Backend FastAPI
 
-**FastAPI REST API Server**
+Backend của VPN Gaming là API FastAPI chịu trách nhiệm xác thực, quản lý máy cloud, phiên chơi, billing theo phút, ví/nạp tiền, subscription và admin portal. Backend cũng có thể serve frontend build từ `app/static`.
 
-Backend service xây dựng bằng FastAPI, SQLAlchemy, PostgreSQL. Cung cấp API endpoints cho authentication, machine management, payments, và admin operations.
+## Stack
 
----
+| Thành phần | Công nghệ |
+| --- | --- |
+| Web framework | FastAPI 0.110.2 |
+| ASGI server | Uvicorn 0.29 |
+| ORM | SQLAlchemy 2.0 |
+| Database | PostgreSQL 15+ |
+| Driver | psycopg/psycopg2 |
+| Auth | JWT bằng `python-jose`, hash mật khẩu bằng passlib/bcrypt |
+| Config | `python-dotenv`, Pydantic Settings style |
+| HTTP integration | `httpx` cho MoMo/Google |
+| Tests | pytest |
 
-## 📋 Tính năng
+Python hỗ trợ: 3.10, 3.11, 3.12. Python 3.13+ bị chặn sớm trong `app/main.py`.
 
-### Authentication & Authorization
-- ✅ User registration & login
-- ✅ Google OAuth 2.0 integration
-- ✅ Password reset & email verification
-- ✅ JWT token-based authentication
-- ✅ Role-based access control (RBAC)
+## Cấu trúc
 
-### API Features
-- ✅ RESTful API design
-- ✅ Input validation (Pydantic)
-- ✅ Error handling & logging
-- ✅ CORS configuration
-- ✅ API documentation (Swagger/OpenAPI)
-
-### Core Functionality
-- ✅ User management
-- ✅ Machine/VM management
-- ✅ Session creation & management
-- ✅ MoMo payment integration
-- ✅ Email notifications
-- ✅ Admin dashboard API
-
-### Security
-- ✅ Password hashing (bcrypt)
-- ✅ JWT token management
-- ✅ SQL injection prevention
-- ✅ CSRF protection
-- ✅ Rate limiting (optional)
-
----
-
-## 🛠️ Tech Stack
-
-| Thành phần | Công nghệ | Phiên bản |
-|-----------|----------|----------|
-| **Framework** | FastAPI | 0.110.2 |
-| **Server** | Uvicorn | 0.29.0 |
-| **Database** | PostgreSQL | 15+ |
-| **ORM** | SQLAlchemy | 2.0.29 |
-| **Authentication** | python-jose | 3.3.0 |
-| **Password Hashing** | bcrypt | 3.2.2 |
-| **Email** | SMTP (Gmail) | - |
-| **Python** | Python | 3.11+ |
-
----
-
-## 📁 Cấu trúc Dự án
-
-```
+```text
 BE_vpn/
-├── app/
-│   ├── __init__.py
-│   ├── main.py                      # Application entry point
-│   ├── config.py                    # Settings & configuration
-│   ├── database.py                  # Database initialization
-│   ├── models.py                    # SQLAlchemy models (ORM)
-│   ├── schemas.py                   # Pydantic schemas (validation)
-│   ├── api/                         # API layer (FastAPI routers)
-│   │   ├── auth.py
-│   │   ├── machines.py
-│   │   ├── payments.py
-│   │   └── deps.py                  # Shared auth dependencies
-│   ├── services/                    # Business logic layer
-│   │   ├── auth_service.py
-│   │   ├── machine_service.py
-│   │   └── payment_service.py
-│   ├── repositories/                # Data access layer
-│   │   ├── auth_repository.py
-│   │   ├── machine_repository.py
-│   │   └── payment_repository.py
-│   ├── routes.py                    # Legacy/extended admin routes
-│   ├── security.py                  # JWT & password utilities
-│   ├── email_utils.py               # Email sending functions
-│   ├── seed.py                      # Database seeding (dev data)
-│   ├── static/                      # Frontend fallback (optional)
-│   │   ├── index.html
-│   │   └── assets/
-│   └── __pycache__/
-│
-├── migrations/
-│   ├── add_balance_and_topup.sql
-│   ├── add_balance_final.sql
-│   └── ...
-│
-├── scripts/
-│   └── setup_backend.ps1            # Windows setup script
-│
-├── Dockerfile                       # Container configuration
-├── requirements.txt                 # Python dependencies
-├── .env.example                     # Environment template
-├── .gitignore
-├── .dockerignore
-└── README.md
+|-- app/
+|   |-- api/
+|   |   |-- auth.py
+|   |   |-- machines.py
+|   |   |-- payments.py
+|   |   |-- subscriptions.py
+|   |   |-- admin.py
+|   |   `-- deps.py
+|   |-- repositories/
+|   |   |-- auth_repository.py
+|   |   |-- machine_repository.py
+|   |   |-- payment_repository.py
+|   |   `-- admin_repository.py
+|   |-- services/
+|   |   |-- auth_service.py
+|   |   |-- machine_service.py
+|   |   |-- payment_service.py
+|   |   |-- subscription_service.py
+|   |   |-- admin_service.py
+|   |   `-- infrastructure_adapters.py
+|   |-- core/
+|   |-- static/              # Vite build output; backend SPA fallback
+|   |-- config.py
+|   |-- database.py
+|   |-- main.py
+|   |-- models.py
+|   |-- pricing.py
+|   |-- schemas.py
+|   |-- security.py
+|   |-- email_utils.py
+|   `-- seed.py
+|-- migrations/              # Legacy SQL snippets
+|-- tests/
+|-- Dockerfile
+|-- requirements.txt
+|-- .env.example
+`-- README.md
 ```
 
-### Clean Architecture Flow
+Luồng phụ thuộc chính:
 
+```text
+FastAPI router -> Service -> Repository -> SQLAlchemy Session -> PostgreSQL
 ```
-API (app/api) -> Service (app/services) -> Repository (app/repositories) -> Database (SQLAlchemy Session)
-```
 
-- API layer: chi xu ly HTTP (request/response, validation, dependency injection)
-- Service layer: chua logic nghiep vu
-- Repository layer: truy cap du lieu va query DB
+## Chạy local
 
----
+### 1. Tạo môi trường Python
 
-## 🚀 Getting Started
-
-### Prerequisites
-- Python 3.11+
-- PostgreSQL 15+ (local or Docker)
-- pip & virtualenv
-
-### Local Development Setup
-
-```bash
-# 1. Create virtual environment
-python -m venv .venv
-
-# 2. Activate venv
-# On Windows:
-.venv\Scripts\activate
-# On Mac/Linux:
-source .venv/bin/activate
-
-# 3. Install dependencies
+```powershell
+cd BE_vpn
+py -3.11 -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
-
-# 4. Create .env file
-cp .env.example .env
-
-# 5. Update .env with your config
-# DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/vpn_app
-# JWT_SECRET=your-secret-key
-
-# 6. Initialize database
-python -m app.database
-
-# 7. Seed development data (optional)
-python -m app.seed
-
-# 8. Run development server
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Expected output:**
+### 2. Tạo file env
+
+```powershell
+copy .env.example .env
 ```
-INFO:     Uvicorn running on http://0.0.0.0:8000
-INFO:     Application startup complete
-```
 
-Visit API docs: `http://localhost:8000/docs`
-
----
-
-## 📝 Environment Variables
-
-### Required
+Cấu hình tối thiểu cho local với PostgreSQL ở `localhost:5432`:
 
 ```env
-# Database
-# Option 1: Let app build connection string from DB_* (recommended)
-DATABASE_URL=
 DB_USER=vpn_user
 DB_PASSWORD=change-this-db-password
 DB_NAME=vpn_app
 DB_HOST=localhost
 DB_PORT=5432
 DB_DRIVER=psycopg2
+DATABASE_URL=
 
-# Option 2: Set DATABASE_URL directly (URL-encode special characters in password)
-# DATABASE_URL=postgresql+psycopg2://vpn_user:myP%40ss%23123@localhost:5432/vpn_app
-
-# JWT
-JWT_SECRET=your-random-256-bit-secret-key
-JWT_ALG=HS256
-JWT_EXPIRE_MIN=30
-
-# Application
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
 APP_BASE_URL=http://localhost:8000
-CORS_ORIGINS=http://localhost,http://localhost:3000
-LOG_LEVEL=INFO
-LOG_JSON=false
+CORS_ORIGINS=http://localhost:5173,http://localhost:8000,http://localhost:8080
 
-# Startup seeding
 SEED_DEFAULT_DATA=true
 SEED_ADMIN_EMAIL=admin@vpngaming.com
 SEED_ADMIN_PASSWORD=change-this-admin-password
 ```
 
-### Optional
+Nếu chạy backend container từ `docker-compose.yml`, backend expose ra host tại `http://localhost:8080` nhưng bên trong container vẫn là port `8000`.
+
+### 3. Chạy server
+
+```powershell
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+URL:
+
+```text
+http://localhost:8000/health
+http://localhost:8000/docs
+http://localhost:8000/redoc
+```
+
+Khi import `app.main`, backend sẽ:
+
+- gọi `init_database()` để tạo extension/tables theo SQLAlchemy models;
+- seed service plans, admin và sample machines nếu `SEED_DEFAULT_DATA=true`;
+- bật billing loop mỗi 60 giây để tính phí phiên active.
+
+## Database
+
+Backend dùng `app/database.py` để tạo engine/session. Có hai cách cấu hình:
+
+1. Đặt `DATABASE_URL` đầy đủ.
+2. Để `DATABASE_URL=` rỗng và dùng `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST`, `DB_PORT`, `DB_DRIVER`.
+
+Ví dụ URL:
+
+```text
+postgresql+psycopg2://vpn_user:change-this-db-password@localhost:5432/vpn_app
+```
+
+Schema đầy đủ và migrations SQL nằm trong `../database`.
+
+## API endpoints
+
+### Auth `/auth`
+
+```text
+POST   /auth/register
+POST   /auth/login
+GET    /auth/me
+POST   /auth/logout
+POST   /auth/forgot
+POST   /auth/reset-password
+POST   /auth/change-password
+POST   /auth/set-password
+PATCH  /auth/profile
+GET    /auth/verify-email
+GET    /auth/google/login
+GET    /auth/google/callback
+```
+
+### Machines and sessions `/machines`
+
+```text
+GET    /machines
+GET    /machines/{machine_id}
+POST   /machines/{machine_id}/start
+POST   /machines/{machine_id}/resume
+GET    /machines/sessions/active
+GET    /machines/sessions/history
+GET    /machines/sessions/history/summary
+POST   /machines/sessions/{session_id}/stop
+POST   /machines/sessions/{session_id}/heartbeat
+GET    /machines/sessions/{session_id}/ovpn
+POST   /machines/sessions/{session_id}/vpn/check
+POST   /machines/sessions/{session_id}/sunshine/pair
+```
+
+### Subscriptions `/subscriptions`
+
+```text
+GET    /subscriptions/plans
+GET    /subscriptions/me
+POST   /subscriptions/purchase
+```
+
+### Payments `/payments`
+
+```text
+POST   /payments/momo
+POST   /payments/momo/ipn
+GET    /payments/balance
+GET    /payments/topup-history
+GET    /payments/topup-summary
+```
+
+### Admin `/admin`
+
+```text
+GET    /admin/dashboard
+GET    /admin/users
+PATCH  /admin/users/{user_id}
+POST   /admin/users/{user_id}/topup
+GET    /admin/machines
+POST   /admin/machines
+PATCH  /admin/machines/{machine_id}
+DELETE /admin/machines/{machine_id}
+GET    /admin/machines/statistics
+GET    /admin/sessions
+POST   /admin/sessions/{session_id}/stop
+POST   /admin/sessions/{session_id}/fail
+GET    /admin/transactions
+GET    /admin/transactions/{transaction_id}
+GET    /admin/transactions/export
+GET    /admin/revenue/statistics
+GET    /admin/settings
+PUT    /admin/settings
+```
+
+## Billing và session lifecycle
+
+`MachineService` xử lý:
+
+- tính trial ngày;
+- tính giá theo PAYG/membership;
+- start/resume/stop session;
+- heartbeat, idle warning, disconnected grace, stop khi hết tiền hoặc quá thời gian;
+- refund theo cửa sổ refund;
+- snapshot/cooldown;
+- history và summary cho màn lịch sử.
+
+Billing loop trong `main.py` chạy mỗi 60 giây và gọi `bill_all_active_sessions()`.
+
+## Payment flow
+
+Rule hiện tại của ví:
+
+1. User bấm nạp tiền.
+2. `POST /payments/momo` tạo `Payment` trạng thái `pending` và trả `pay_url`.
+3. Chưa tạo lịch sử nạp ví và chưa cộng tiền ở bước này.
+4. MoMo gọi `POST /payments/momo/ipn`.
+5. Backend verify signature.
+6. Nếu `resultCode == 0`, backend cộng số dư và tạo `TopupTransaction` trạng thái `succeeded`.
+7. Lịch sử nạp tiền của user mặc định chỉ trả các giao dịch `succeeded`.
+
+Các `TopupTransaction pending` cũ nếu còn trong database sẽ không xuất hiện ở lịch sử user mặc định. Admin có thể đối soát qua `/admin/transactions`.
+
+Admin nạp/trừ tiền thủ công dùng:
+
+```text
+POST /admin/users/{user_id}/topup
+```
+
+Nếu amount âm, provider trả ra là `admin_debit`.
+
+## Email và OAuth
+
+SMTP:
 
 ```env
-# Email (SMTP)
 SMTP_FALLBACK_TO_CONSOLE=true
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASS=your-app-password
-SMTP_FROM=noreply@your-domain.com
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+SMTP_USE_TLS=true
+VERIFICATION_EXPIRE_MIN=30
+```
 
-# Google OAuth
-GOOGLE_CLIENT_ID=your-client-id
-GOOGLE_CLIENT_SECRET=your-client-secret
+Google OAuth:
+
+```env
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+```
 
-# MoMo Payment
+## MoMo env
+
+```env
 MOMO_PARTNER_CODE=MOMO
-MOMO_ACCESS_KEY=access-key
-MOMO_SECRET_KEY=secret-key
+MOMO_ACCESS_KEY=F8BBA842ECF85
+MOMO_SECRET_KEY=
 MOMO_ENDPOINT=https://test-payment.momo.vn/v2/gateway/api/create
+MOMO_REDIRECT_URL=http://localhost:8000/app
+MOMO_IPN_URL=http://localhost:8000/payments/momo/ipn
+MOMO_REQUEST_TYPE=payWithMethod
 ```
 
----
+`MOMO_IPN_URL` cần public URL nếu muốn MoMo gọi được từ internet.
 
-## 🔌 API Endpoints
+## Serve frontend từ backend
 
-### Authentication (`/auth`)
+Nếu `BE_vpn/app/static/index.html` tồn tại, backend mount:
 
-```http
-POST   /auth/register              # Register new user
-POST   /auth/login                 # User login
-POST   /auth/logout                # User logout
-POST   /auth/refresh               # Refresh JWT token
-GET    /auth/me                    # Get current user
-POST   /auth/forgot-password       # Request password reset
-POST   /auth/reset-password        # Reset password
-GET    /auth/google/callback       # Google OAuth callback
+- `/assets/*` cho static assets;
+- `/` cho SPA root;
+- `/{full_path:path}` fallback về `index.html`.
+
+Build frontend:
+
+```powershell
+cd ..\FE_vpn
+npm run build
 ```
 
-### Machines (`/machines`)
+Sau đó backend serve app tại `http://localhost:8000`.
 
-```http
-GET    /machines                   # List available machines
-POST   /machines/create-session    # Create new session
-GET    /machines/my-sessions       # User's sessions
-POST   /machines/{id}/stop         # Stop session
-GET    /machines/{id}/stats        # Machine statistics
+## Test và kiểm tra
+
+```powershell
+cd BE_vpn
+.\.venv\Scripts\python.exe -m compileall app
+.\.venv\Scripts\python.exe -m pytest tests/test_payments.py
+.\.venv\Scripts\python.exe -m pytest tests/test_machine_billing.py
+.\.venv\Scripts\python.exe -m pytest
 ```
 
-### Payments (`/payments`)
+## Docker
 
-```http
-POST   /payments/momo/create       # Create MoMo payment
-GET    /payments/momo/callback     # MoMo callback
-POST   /payments/momo/ipn          # MoMo IPN webhook
-GET    /payments/history           # Transaction history
-GET    /payments/statistics        # Payment statistics
+Build riêng backend:
+
+```powershell
+cd BE_vpn
+docker build -t vpn-gaming-backend .
 ```
 
-### Admin (`/admin`)
+Chạy toàn hệ thống từ root:
 
-```http
-GET    /admin/users                # List all users
-GET    /admin/users/{id}           # Get user details
-PATCH  /admin/users/{id}           # Update user
-DELETE /admin/users/{id}           # Delete user
-GET    /admin/machines             # List all machines
-GET    /admin/transactions         # List transactions
-GET    /admin/dashboard            # Admin dashboard stats
+```powershell
+docker compose up -d --build
 ```
 
----
+## Seed mặc định
 
-## 📊 Database Schema
+Nếu database trống và `SEED_DEFAULT_DATA=true`, backend tạo:
 
-### Tables
+- service plans: `basic`, `pro`, `premium`;
+- admin theo `SEED_ADMIN_EMAIL` và `SEED_ADMIN_PASSWORD`;
+- sample machines tại Vietnam, Singapore, Japan.
 
-```sql
--- Users
-CREATE TABLE users (
-  id UUID PRIMARY KEY,
-  email VARCHAR UNIQUE NOT NULL,
-  password_hash VARCHAR,
-  display_name VARCHAR,
-  role VARCHAR (DEFAULT 'user'),
-  balance DECIMAL,
-  created_at TIMESTAMP,
-  updated_at TIMESTAMP
-)
-
--- Machines
-CREATE TABLE machines (
-  id UUID PRIMARY KEY,
-  name VARCHAR,
-  status VARCHAR,
-  os VARCHAR,
-  specs TEXT,
-  created_at TIMESTAMP
-)
-
--- Sessions
-CREATE TABLE sessions (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  machine_id UUID REFERENCES machines(id),
-  status VARCHAR,
-  started_at TIMESTAMP,
-  ended_at TIMESTAMP
-)
-
--- Transactions
-CREATE TABLE transactions (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  amount DECIMAL,
-  type VARCHAR,
-  status VARCHAR,
-  created_at TIMESTAMP
-)
-```
-
----
-
-## 🐳 Docker Deployment
-
-### Build Image
-
-```bash
-docker build -t vpn-gaming-backend:latest .
-```
-
-### Run Container
-
-```bash
-docker run -d \
-  -p 8000:8000 \
-  -e DATABASE_URL="postgresql+psycopg2://user:pass@db:5432/vpn_app" \
-  -e JWT_SECRET="your-secret" \
-  --name vpn-backend \
-  vpn-gaming-backend:latest
-```
-
-### With Docker Compose
-
-```bash
-docker-compose up -d backend
-```
-
----
-
-## 🔐 Security Best Practices
-
-### Authentication
-- Passwords hashed with bcrypt (cost: 12)
-- JWT stored in httpOnly cookies
-- Token expiration: 30 minutes (configurable)
-- Refresh token rotation
-
-### Database
-- Parameterized queries (SQLAlchemy ORM)
-- SQL injection prevention
-- Password hashing before storage
-
-### API
-- CORS configuration per environment
-- Input validation with Pydantic
-- Error messages don't expose internals
-- Rate limiting (optional)
-
-### HTTPS
-- Enforce in production
-- Let's Encrypt support
-- Secure cookie flags
-
----
-
-## 📝 Available Commands
-
-```bash
-# Development
-python -m uvicorn app.main:app --reload
-
-# Production
-gunicorn app.main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker
-
-# Database
-python -m app.database          # Initialize
-python -m app.seed              # Seed data
-
-# Linting
-pylint app/
-black app/
-
-# Testing
-pytest tests/
-```
-
----
-
-## 🐛 Troubleshooting
-
-### Database connection failed
-
-```bash
-# Check PostgreSQL running
-psql -U vpn_user -h localhost -d vpn_app -c "\dt"
-
-# Verify DATABASE_URL
-echo $DATABASE_URL
-
-# Create database if missing
-createdb -U vpn_user vpn_app
-```
-
-### JWT errors
-
-```bash
-# Generate new JWT_SECRET
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# Update .env and restart
-```
-
-### Email not sending
-
-```bash
-# Check SMTP config
-# Enable "Less secure apps" in Gmail (if using Gmail)
-# Or use App Password for 2FA accounts
-```
-
----
-
-## 📚 API Documentation
-
-**Interactive API Documentation:**
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
-
----
-
-## 📖 Development Tips
-
-### Adding New Endpoint
-
-```python
-# 1. Add route in routes.py
-@router.get("/items")
-async def list_items(db: Session = Depends(get_db)):
-    return db.query(models.Item).all()
-
-# 2. Add schema in schemas.py
-class ItemOut(BaseModel):
-    id: UUID
-    name: str
-
-# 3. Add model in models.py (if needed)
-class Item(Base):
-    __tablename__ = "items"
-    id = Column(UUID, primary_key=True)
-    name = Column(String, nullable=False)
-```
-
-### Debugging
-
-```python
-import logging
-
-logger = logging.getLogger(__name__)
-logger.debug(f"Debug info: {variable}")
-logger.error(f"Error occurred: {error}")
-```
-
----
-
-## 🤝 Contributing
-
-1. Create feature branch: `git checkout -b feature/your-feature`
-2. Commit: `git commit -m 'Add feature'`
-3. Push: `git push origin feature/your-feature`  
-4. Open Pull Request
-
----
-
-## 📄 License
-
-MIT License - See [LICENSE](../LICENSE)
-
----
-
-**Last Updated**: March 2026 | **Maintainers**: Your Team
+Không dùng password seed mặc định trong production.

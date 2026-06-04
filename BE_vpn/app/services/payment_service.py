@@ -98,13 +98,6 @@ class PaymentService:
             pay_url=data.get("payUrl"),
             extra_data=extra_data,
         )
-        self.repo.create_pending_topup(
-            user_id=current_user.id,
-            payment_id=payment.id,
-            amount=amount,
-            balance_before=current_user.balance or 0,
-            description=payload.description,
-        )
         self.repo.commit()
 
         return schemas.PaymentInitResponse(
@@ -163,15 +156,22 @@ class PaymentService:
         )
 
         topup = self.repo.get_topup_by_payment_id(payment.id)
-        if topup and is_success:
+        if is_success:
             user = self.repo.get_user_by_id(payment.user_id)
             if user:
-                old_balance, new_balance = self.repo.apply_topup_success(
-                    topup=topup,
-                    user=user,
-                    amount=payment.amount,
-                    trans_id=payment.trans_id,
-                )
+                if topup:
+                    old_balance, new_balance = self.repo.apply_topup_success(
+                        topup=topup,
+                        user=user,
+                        amount=payment.amount,
+                        trans_id=payment.trans_id,
+                    )
+                else:
+                    _, old_balance, new_balance = self.repo.create_succeeded_topup_from_payment(
+                        payment=payment,
+                        user=user,
+                        trans_id=payment.trans_id,
+                    )
                 self.logger.info(
                     "Topup success: user=%s, amount=%d, new_balance=%d",
                     user.email,
@@ -197,11 +197,12 @@ class PaymentService:
         page_size: int,
         status_filter: str | None,
     ) -> schemas.TopupHistoryPage:
+        effective_status = status_filter or "succeeded"
         items, total = self.repo.list_user_topup_history(
             user_id=current_user.id,
             page=page,
             page_size=page_size,
-            status_filter=status_filter,
+            status_filter=effective_status,
         )
         return schemas.TopupHistoryPage(items=items, total=total, page=page, page_size=page_size)
 
@@ -219,23 +220,19 @@ class PaymentService:
         latest_topup_at = None
 
         for item in items:
-            if latest_topup_at is None or (item.created_at and item.created_at > latest_topup_at):
-                latest_topup_at = item.created_at
-
+            if item.status != "succeeded":
+                continue
             amount = int(item.amount or 0)
-            if item.status == "succeeded":
-                succeeded_transactions += 1
-                total_succeeded_amount += amount
-                if billing_day(item.completed_at or item.created_at) in week_days:
-                    week_succeeded_amount += amount
-            elif item.status == "pending":
-                pending_transactions += 1
-                pending_amount += amount
-            elif item.status == "failed":
-                failed_transactions += 1
+            succeeded_transactions += 1
+            total_succeeded_amount += amount
+            topup_time = item.completed_at or item.created_at
+            if latest_topup_at is None or (topup_time and topup_time > latest_topup_at):
+                latest_topup_at = topup_time
+            if billing_day(topup_time) in week_days:
+                week_succeeded_amount += amount
 
         return schemas.TopupSummaryOut(
-            total_transactions=len(items),
+            total_transactions=succeeded_transactions,
             succeeded_transactions=succeeded_transactions,
             pending_transactions=pending_transactions,
             failed_transactions=failed_transactions,

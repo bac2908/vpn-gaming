@@ -1,429 +1,334 @@
-# VPN Gaming Platform - Hệ thống Quản lý VPN & Cloud Gaming
+# VPN Gaming
 
-**Phiên bản**: 1.0.0 | **Ngôn ngữ**: Python (Backend) + React (Frontend) | **License**: MIT
+VPN Gaming là nền tảng web quản lý cloud gaming qua VPN riêng. Dự án gồm frontend React/Vite, backend FastAPI, PostgreSQL, flow khởi tạo máy chơi game, tải profile OpenVPN, xác nhận Sunshine/Moonlight, thanh toán MoMo, ví người dùng và cổng quản trị.
 
-## 📖 Giới thiệu Dự án
+## Trạng thái kỹ thuật hiện tại
 
-Nền tảng quản lý VPN Gaming là một hệ thống web toàn vẹn cho phép người dùng:
-- **Xác thực & cấp quyền**: Đăng ký/đăng nhập với OAuth (Google), hỗ trợ đặt lại mật khẩu
-- **Quản lý phiên**: Khởi tạo/dừng phiên máy ảo, theo dõi thời gian sử dụng
-- **Kết nối VPN**: Tự động tạo tài khoản VPN, cung cấp file `.ovpn`
-- **Thanh toán**: Tích hợp MoMo Payment cho nạp tiền/thanh toán phí
-- **Bảng điều khiển admin**: Quản lý người dùng, máy, giao dịch
+- Frontend: React 19, Vite 7, React Router 7, Recharts, lucide-react.
+- Backend: FastAPI, SQLAlchemy, PostgreSQL, JWT, SMTP, Google OAuth tùy chọn, MoMo IPN.
+- Database: PostgreSQL 15+, schema SQL trong `database/`, migrations SQL trong `database/migrations/versions/`.
+- Docker: `docker-compose.yml` chạy PostgreSQL, backend FastAPI và frontend Nginx.
+- Local build frontend: chạy `npm run build` trong `FE_vpn/` sẽ xuất thẳng vào `BE_vpn/app/static` để backend có thể serve SPA tại `http://localhost:8000`.
 
----
+## Chức năng chính
 
-## 🏗️ Kiến trúc Hệ thống
+- Đăng ký, đăng nhập, đăng xuất, đổi mật khẩu, đặt mật khẩu cho tài khoản OAuth, quên mật khẩu.
+- Google OAuth đăng nhập tùy chọn.
+- Dashboard người dùng với ví, trạng thái phiên và máy đề xuất.
+- Danh sách máy cloud theo vùng, GPU, ping, trạng thái, giá/phút, trial.
+- Wizard khởi tạo phiên: chọn máy, boot VM, tải `.ovpn`, kiểm tra VPN, xác nhận Sunshine/Moonlight.
+- Billing PAYG theo phút, trial ngày, gói membership giảm giá, snapshot/resume.
+- Lịch sử phiên chơi, thống kê 7 ngày, timeline hoạt động, export CSV/JSON.
+- Ví người dùng và lịch sử nạp tiền: chỉ hiển thị các khoản đã thanh toán và đã cộng vào ví.
+- MoMo payment: tạo payment pending, chỉ cộng ví khi IPN thành công.
+- Admin portal: quản lý user, máy, phiên, giao dịch, doanh thu, settings.
 
-### Mô hình Triển khai (Production)
+## Cấu trúc thư mục
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    NGINX Reverse Proxy                  │
-│                    (Port 80 Public)                     │
-├─────────────────────────────────────────────────────────┤
-│ ✓ SPA Frontend (React) tại /                            │
-│ ✓ Route /auth → Backend                                 │
-│ ✓ Route /machines → Backend                             │
-│ ✓ Route /payments → Backend                             │
-│ ✓ Route /admin → Backend                                │
-└────────────────┬──────────────────────────────────────┘
-                 │ Docker Network
-        ┌────────┼────────┐
-        │        │        │
-    ┌───▼──┐ ┌──▼──┐ ┌──▼────────┐
-    │Backend│ │  DB  │ │ Cache(opt)│
-    │:8000 │ │:5432 │ │  Redis    │
-    └──────┘ └──────┘ └───────────┘
-```
-
-**Ưu điểm kiến trúc này:**
-- ✅ Single entry point (1 domain, port 80)
-- ✅ CORS tự động (cùng domain)
-- ✅ SSL/TLS centralized tại nginx
-- ✅ Backend không exposed ra internet
-- ✅ Scalable (dễ thêm container backends)
-
-### Stack Công nghệ
-
-| Thành phần | Công nghệ | Phiên bản |
-|-----------|----------|----------|
-## 📋 Yêu cầu Hệ thống
-
-### Phát triển cục bộ
-- **Python** 3.11+ (cho backend)
-- **Node.js** 18+ (cho frontend)
-- **PostgreSQL** 15+ hoặc SQLite (phát triển)
-- **Git** 2.0+
-
-### Production (Docker)
-- **Docker** 20.10+
-- **Docker Compose** 1.29+
-- **Port 80, 443** mở trên host
-
----
-
-## 🚀 Hướng dẫn Nhanh
-
-### 1. Clone & Chuẩn bị
-
-```bash
-git clone <your-repo-url>
-cd ThuctapCloud
+```text
+vpn-gaming/
+|-- BE_vpn/                  # Backend FastAPI
+|   |-- app/
+|   |   |-- api/             # Routers: auth, machines, payments, subscriptions, admin
+|   |   |-- repositories/    # Data access
+|   |   |-- services/        # Business logic
+|   |   |-- static/          # Frontend build output for backend static serving
+|   |   |-- main.py          # FastAPI app, CORS, billing loop, static SPA fallback
+|   |   |-- models.py        # SQLAlchemy models
+|   |   |-- schemas.py       # Pydantic schemas
+|   |   |-- config.py        # Env settings
+|   |   |-- database.py      # Engine/session/init
+|   |   `-- security.py      # JWT/password/token helpers
+|   |-- migrations/          # Legacy SQL migration snippets
+|   |-- tests/               # Pytest tests
+|   |-- Dockerfile
+|   |-- requirements.txt
+|   `-- README.md
+|-- FE_vpn/                  # Frontend React/Vite
+|   |-- public/              # Images/logo assets
+|   |-- src/
+|   |   |-- api/             # fetch API wrappers
+|   |   |-- pages/           # Landing, Dashboard, Machines, Wizard, History, Admin...
+|   |   |-- utils/
+|   |   |-- App.jsx
+|   |   |-- App.css
+|   |   `-- main.js
+|   |-- Dockerfile
+|   |-- nginx.conf
+|   |-- vite.config.js
+|   |-- package.json
+|   `-- README.md
+|-- database/                # PostgreSQL schema, seed, migrations, backup scripts
+|-- deploy/                  # Deployment scripts
+|-- docs/                    # Planning/API/backlog docs
+|-- tmp_ui_code/             # Prototype UI components, not production source
+|-- docker-compose.yml
+|-- DEPLOY_GUIDE.md
+`-- README.md
 ```
 
-### 2. Cấu hình Environments
+## Yêu cầu môi trường
 
-**Backend:**
-```bash
+- Python 3.10, 3.11 hoặc 3.12. Python 3.13+ bị chặn trong `BE_vpn/app/main.py` vì FastAPI/Pydantic v1 của dự án chưa tương thích.
+- Node.js 18+ hoặc 20+.
+- PostgreSQL 15+.
+- Docker và Docker Compose nếu chạy container.
+
+## Chạy local từ source
+
+### 1. Database
+
+Cách nhanh nhất là chạy riêng service database bằng Docker Compose gốc:
+
+```powershell
+docker compose up -d database
+```
+
+Database mặc định:
+
+```text
+host: localhost
+port: 5432
+user: vpn_user
+password: change-this-db-password
+database: vpn_app
+```
+
+### 2. Backend
+
+```powershell
 cd BE_vpn
-cp .env.example .env
-# Chỉnh sửa DATABASE_URL, JWT_SECRET, SMTP credentials theo môi trường
-```
-
-**Frontend:**
-```bash
-cd FE_vpn
-cp .env.example .env.development
-# Chỉnh sửa VITE_API_BASE_URL (development: http://localhost:8080)
-```
-
-### 3. Phát triển cục bộ
-
-**Backend:**
-```bash
-cd BE_vpn
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+py -3.11 -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
-# Backend chạy tại http://localhost:8000
+copy .env.example .env
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Frontend (terminal khác):**
-```bash
+Backend chạy tại:
+
+```text
+http://localhost:8000
+http://localhost:8000/docs
+```
+
+Lần khởi động đầu tiên backend sẽ gọi `init_database()` và seed dữ liệu mặc định nếu `SEED_DEFAULT_DATA=true`.
+
+### 3. Frontend
+
+Nếu backend chạy trực tiếp tại port `8000`, nên để frontend dùng proxy Vite:
+
+```powershell
 cd FE_vpn
 npm install
-npm run dev
-# Frontend chạy tại http://localhost:5173
+copy .env.example .env.development
 ```
 
-### 4. Production Deployment
+Trong `FE_vpn/.env.development`, đặt:
 
-Xem [DEPLOY_GUIDE.md](DEPLOY_GUIDE.md) để hướng dẫn chi tiết.
-
-**Nhanh gọn:**
-```bash
-docker-compose up -d
-# Hệ thống chạy tại http://your-domain.com
+```env
+VITE_API_BASE_URL=
 ```
 
----
+Sau đó chạy:
 
-## 📁 Cấu trúc Dự án
-
-```
-ThuctapCloud/
-├── BE_vpn/                          # Backend FastAPI
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py                  # Application entry point
-│   │   ├── routes.py                # API endpoints (/auth, /machines, /payments, /admin)
-│   │   ├── models.py                # SQLAlchemy models
-│   │   ├── schemas.py               # Pydantic schemas
-│   │   ├── config.py                # Configuration management
-│   │   ├── database.py              # Database initialization
-│   │   ├── security.py              # JWT & password utilities
-│   │   ├── email_utils.py           # Email sending
-│   │   └── seed.py                  # Database seeding
-│   ├── migrations/                  # Database migration scripts
-│   ├── Dockerfile                   # Container configuration
-│   ├── requirements.txt             # Python dependencies
-│   └── .env.example                 # Environment template
-│
-├── FE_vpn/                          # Frontend React + Vite
-│   ├── src/
-│   │   ├── pages/                   # Page components
-│   │   │   ├── Dashboard.jsx        # User dashboard
-│   │   │   ├── Machines.jsx         # Machine management
-│   │   │   ├── Wizard.jsx           # Session wizard
-│   │   │   ├── History.jsx          # Session history
-│   │   │   ├── Support.jsx          # Support & help
-│   │   │   ├── Admin.jsx            # Admin dashboard
-│   │   │   └── auth/                # Auth pages
-│   │   ├── components/              # Reusable components
-│   │   ├── api/                     # API client functions
-│   │   ├── data/                    # Mock data & constants
-│   │   ├── App.jsx                  # Main app component
-│   │   └── main.jsx                 # React entry point
-│   ├── public/                      # Static assets
-│   ├── Dockerfile                   # Container configuration
-│   ├── nginx.conf                   # Nginx reverse proxy config
-│   ├── vite.config.js               # Vite configuration
-│   ├── package.json                 # Dependencies
-│   └── .env.example                 # Environment template
-│
-├── deploy/                          # Deployment scripts
-│   ├── deploy.sh                    # Main deployment script
-│   ├── setup_vps.sh                 # VPS setup script
-│   └── deploy_production.sh         # Production deployment
-│
-├── docker-compose.yml               # Multi-container orchestration
-├── DEPLOY_GUIDE.md                  # Detailed deployment guide
-├── README.md                        # This file
-├── package.json                     # Root dependencies (if any)
-└── .gitignore                       # Git ignore rules
-```
-
----
-
-## 🔌 API Endpoints
-
-### Authentication (`/auth`)
-- `POST /auth/register` - Đăng ký người dùng mới
-- `POST /auth/login` - Đăng nhập
-- `POST /auth/logout` - Đăng xuất
-- `POST /auth/refresh` - Làm mới token
-- `GET /auth/me` - Lấy thông tin người dùng hiện tại
-- `POST /auth/forgot-password` - Yêu cầu đặt lại mật khẩu
-- `POST /auth/reset-password` - Đặt lại mật khẩu
-- `GET /auth/google/callback` - Google OAuth callback
-
-### Machines (`/machines`)
-- `GET /machines` - Danh sách máy có sẵn
-- `POST /machines/create-session` - Tạo phiên mới
-- `GET /machines/my-sessions` - Phiên của người dùng
-- `POST /machines/{id}/stop` - Dừng phiên
-
-### Payments (`/payments`)
-- `POST /payments/momo/create` - Tạo thanh toán MoMo
-- `GET /payments/momo/callback` - MoMo callback
-- `POST /payments/momo/ipn` - MoMo IPN (Instant Payment Notification)
-- `GET /payments/history` - Lịch sử giao dịch
-
-### Admin (`/admin`)
-- `GET /admin/users` - Danh sách người dùng
-- `GET /admin/machines` - Danh sách máy
-- `GET /admin/transactions` - Danh sách giao dịch
-- `PATCH /admin/users/{id}` - Cập nhật người dùng
-- `DELETE /admin/users/{id}` - Xóa người dùng
-
----
-
-## 🔐 Bảo mật
-
-### Xác thực & Ủy quyền
-- JWT (JSON Web Tokens) cho session management
-- Token lưu tại httpOnly cookies (chặn XSS)
-- CSRF protection trên forms
-- Password hashing với bcrypt
-
-### HTTPS/SSL
-- Nginx tự động redirect HTTP → HTTPS
-- Let's Encrypt support (qua certbot)
-
-### CORS & Rate Limiting
-- CORS cấu hình tại environment
-- Rate limiting trên API endpoints
-- IP whitelisting (optional)
-
-### SQL Injection Prevention
-- SQLAlchemy parameterized queries
-- Input validation với Pydantic
-
----
-
-## 💾 Quản lý Cơ sở Dữ liệu
-
-### Migrations
-```bash
-# Xem các migration có sẵn
-ls BE_vpn/migrations/
-
-# Chạy migrations
-python BE_vpn/app/database.py
-```
-
-### Seeding (Dev Data)
-```bash
-python BE_vpn/app/seed.py
-```
-
-### Backup
-```bash
-# PostgreSQL dump
-pg_dump -U vpn_user -d vpn_app > backup.sql
-
-# Restore
-psql -U vpn_user -d vpn_app < backup.sql
-```
-
----
-
-## 🐛 Troubleshooting
-
-| Vấn đề | Giải pháp |
-|--------|----------|
-| Backend không kết nối DB | Kiểm tra `DATABASE_URL` environment, đảm bảo PostgreSQL chạy |
-| CORS errors | Cấu hình `CORS_ORIGINS` phù hợp, thêm domain vào list |
-| Frontend không tải API | Kiểm tra `VITE_API_BASE_URL`, nginx proxy config |
-| OAuth không hoạt động | Kiểm tra `GOOGLE_REDIRECT_URI`, credentials tại Google Cloud Console |
-| MoMo payment fails | Kiểm tra `MOMO_PARTNER_CODE`, `MOMO_SECRET_KEY`, connection từ server |
-
----
-
-## 📞 Support & Contribution
-
-- **Bug Reports**: [GitHub Issues](https://github.com/your-repo/issues)
-- **Documentation**: Xem `/docs` folder
-- **Team**: [Your Team Info]
-
----
-
-## 📜 License
-
-MIT License - Xem [LICENSE](LICENSE) file chi tiết.
-│   │   ├── pages/       # React pages
-│   │   └── api/         # API clients
-│   ├── nginx.conf       # Nginx config với reverse proxy
-│   └── Dockerfile
-│
-├── deploy/              # Deployment scripts
-│   ├── deploy.sh        # Main deploy script
-│   └── setup_vps.sh     # VPS setup script
-│
-├── docker-compose.yml   # Docker orchestration
-├── .env.example         # Production template
-├── .env.development     # Development template
-└── README.md
-```
-
-## 🔧 Các lệnh hữu ích
-
-```bash
-# Xem logs
-docker compose logs -f
-docker compose logs -f backend
-docker compose logs -f frontend
-
-# Restart services
-docker compose restart
-docker compose restart backend
-
-# Dừng tất cả
-docker compose down
-
-# Dừng và xóa volumes (CẢNH BÁO: mất dữ liệu)
-docker compose down -v
-
-# Rebuild một service
-docker compose up -d --build backend
-```
-
-## 👤 Tài khoản mặc định
-
-- **Admin**: admin@vpngaming.com / Admin@123
-
-## 🌐 Endpoints (Production)
-
-Tất cả đều qua port 80 (cùng domain):
-
-| Path | Mô tả |
-|------|-------|
-| `/` | Giao diện người dùng (React) |
-| `/app` | Dashboard sau đăng nhập |
-| `/auth/*` | API xác thực |
-| `/machines/*` | API quản lý máy |
-| `/payments/*` | API thanh toán |
-| `/admin/*` | API quản trị |
-| `/docs` | Swagger API documentation |
-| `/health` | Frontend health check |
-| `/api/health` | Backend health check |
-
-## 🔐 Tính năng bảo mật
-
-- JWT authentication với token expiry
-- Password hashing với bcrypt
-- CORS configuration
-- Token revocation on logout
-- Email verification
-
-## 💳 Tích hợp thanh toán
-
-- **MoMo**: Đã tích hợp sandbox, cấu hình production key trong .env
-
-## 📧 Email
-
-- Hỗ trợ SMTP (Gmail, v.v.)
-- Fallback to console khi không cấu hình
-
-## 🐛 Troubleshooting
-
-### Backend không khởi động được
-```bash
-# Kiểm tra logs
-docker compose logs backend
-
-# Kiểm tra database connection
-docker compose exec backend python -c "from app.database import engine; print(engine.url)"
-```
-
-### API trả về 502 Bad Gateway
-```bash
-# Kiểm tra backend đã chạy chưa
-docker compose ps
-curl http://localhost:8000/health  # Trong container
-
-# Kiểm tra nginx logs
-docker compose logs frontend
-```
-
-### Database connection refused
-```bash
-# Kiểm tra database container
-docker compose ps database
-docker compose logs database
-```
-
-## 🛠️ Development Mode
-
-Khi phát triển local, dùng `.env.development`:
-
-```bash
-cp .env.development .env
-
-# Chạy backend riêng
-cd BE_vpn
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-
-# Chạy frontend riêng
-cd FE_vpn
-npm install
+```powershell
 npm run dev
 ```
 
-Trong dev mode, FE gọi API trực tiếp qua `VITE_API_BASE_URL=http://localhost:8080`.
+Frontend dev chạy tại:
 
-## 📝 License
-
-Private - Dự án thực tập
-docker compose exec backend python -c "from app.database import engine; print(engine.url)"
+```text
+http://localhost:5173
 ```
 
-### Frontend 502 Bad Gateway
-```bash
-# Kiểm tra backend đã chạy chưa
-curl http://localhost:8080/health
+Nếu backend đang chạy qua Docker với port host `8080`, có thể đặt:
+
+```env
+VITE_API_BASE_URL=http://localhost:8080
 ```
 
-### Database connection refused
-```bash
-# Kiểm tra database container
-docker compose ps database
-docker compose logs database
+## Build frontend vào backend static
+
+Ở chế độ local, `FE_vpn/vite.config.js` xuất build sang `BE_vpn/app/static`:
+
+```powershell
+cd FE_vpn
+npm run build
 ```
 
-## 📝 License
+Sau build, backend có thể serve toàn bộ SPA tại:
 
-Private - Dự án thực tập
+```text
+http://localhost:8000
+http://localhost:8000/app
+http://localhost:8000/admin-portal
+```
+
+## Chạy bằng Docker Compose
+
+```powershell
+copy .env.example .env
+docker compose up -d --build
+```
+
+Các service chính:
+
+| Service | Container | Host port | Ghi chú |
+| --- | --- | --- | --- |
+| `database` | `vpn_database` | `5432` | PostgreSQL 15 |
+| `backend` | `vpn_backend` | `8080 -> 8000` | FastAPI |
+| `frontend` | `vpn_frontend` | `80` | Nginx + React build |
+
+Lưu ý: `FE_vpn/nginx.conf` hiện proxy `/auth`, `/machines`, `/payments`, `/admin`, `/docs`, `/openapi.json`, `/api/health`. Frontend code có gọi `/subscriptions`; nếu dùng frontend Nginx container riêng, cần bổ sung proxy `/subscriptions` hoặc dùng backend static serving.
+
+## Route frontend
+
+| Route | Mô tả |
+| --- | --- |
+| `/` | Landing page |
+| `/login`, `/register`, `/forgot`, `/reset` | Auth pages |
+| `/app` | Dashboard người dùng |
+| `/app/machines` | Danh sách máy |
+| `/app/wizard` | Khởi tạo/tiếp tục phiên |
+| `/app/subscriptions` | Gói membership |
+| `/app/history` | Lịch sử phiên và nạp tiền |
+| `/app/support` | Hỗ trợ, hướng dẫn |
+| `/admin-portal/login` | Đăng nhập admin |
+| `/admin-portal/overview` | Admin portal |
+| `/admin-portal/users` | Quản lý người dùng |
+| `/admin-portal/machines` | Quản lý máy |
+| `/admin-portal/sessions` | Quản lý phiên |
+| `/admin-portal/billing` | Giao dịch/doanh thu |
+| `/admin-portal/settings` | Cài đặt admin |
+
+## API backend chính
+
+### Auth
+
+```text
+POST   /auth/register
+POST   /auth/login
+GET    /auth/me
+POST   /auth/logout
+POST   /auth/forgot
+POST   /auth/reset-password
+POST   /auth/change-password
+POST   /auth/set-password
+PATCH  /auth/profile
+GET    /auth/verify-email
+GET    /auth/google/login
+GET    /auth/google/callback
+```
+
+### Machines and sessions
+
+```text
+GET    /machines
+GET    /machines/{machine_id}
+POST   /machines/{machine_id}/start
+POST   /machines/{machine_id}/resume
+GET    /machines/sessions/active
+GET    /machines/sessions/history
+GET    /machines/sessions/history/summary
+POST   /machines/sessions/{session_id}/stop
+POST   /machines/sessions/{session_id}/heartbeat
+GET    /machines/sessions/{session_id}/ovpn
+POST   /machines/sessions/{session_id}/vpn/check
+POST   /machines/sessions/{session_id}/sunshine/pair
+```
+
+### Subscriptions
+
+```text
+GET    /subscriptions/plans
+GET    /subscriptions/me
+POST   /subscriptions/purchase
+```
+
+### Payments
+
+```text
+POST   /payments/momo
+POST   /payments/momo/ipn
+GET    /payments/balance
+GET    /payments/topup-history
+GET    /payments/topup-summary
+```
+
+Payment rule hiện tại:
+
+- `POST /payments/momo` chỉ tạo payment pending và trả `pay_url`.
+- `POST /payments/momo/ipn` xác thực chữ ký MoMo.
+- Chỉ khi `resultCode == 0` thì backend mới cộng số dư và tạo `topup_transactions` trạng thái `succeeded`.
+- Lịch sử nạp tiền của user mặc định chỉ trả các giao dịch `succeeded`.
+- Admin vẫn có thể xem/đối soát giao dịch qua `/admin/transactions`.
+
+### Admin
+
+```text
+GET    /admin/dashboard
+GET    /admin/users
+PATCH  /admin/users/{user_id}
+POST   /admin/users/{user_id}/topup
+GET    /admin/machines
+POST   /admin/machines
+PATCH  /admin/machines/{machine_id}
+DELETE /admin/machines/{machine_id}
+GET    /admin/machines/statistics
+GET    /admin/sessions
+POST   /admin/sessions/{session_id}/stop
+POST   /admin/sessions/{session_id}/fail
+GET    /admin/transactions
+GET    /admin/transactions/{transaction_id}
+GET    /admin/transactions/export
+GET    /admin/revenue/statistics
+GET    /admin/settings
+PUT    /admin/settings
+```
+
+## Tài khoản seed mặc định
+
+Nếu `SEED_DEFAULT_DATA=true`, backend tự tạo admin nếu chưa có:
+
+```text
+email: admin@vpngaming.com
+password: giá trị SEED_ADMIN_PASSWORD trong .env
+```
+
+Không dùng `change-this-admin-password` trong production.
+
+## Lệnh kiểm tra
+
+Backend:
+
+```powershell
+cd BE_vpn
+.\.venv\Scripts\python.exe -m compileall app
+.\.venv\Scripts\python.exe -m pytest tests/test_payments.py
+.\.venv\Scripts\python.exe -m pytest tests/test_machine_billing.py
+```
+
+Frontend:
+
+```powershell
+cd FE_vpn
+npm run lint
+npm run build
+```
+
+## Tài liệu liên quan
+
+- `BE_vpn/README.md`: chi tiết backend.
+- `FE_vpn/README.md`: chi tiết frontend.
+- `database/README.md`: schema, seed, migrations, backup.
+- `DEPLOY_GUIDE.md`: hướng dẫn triển khai VPS/Docker.
+- `docs/API_CONTRACT_BY_SCREEN.md`: mapping API theo màn hình.
+- `docs/BE_IMPLEMENTATION_BACKLOG.md`: backlog backend.
+
+## Ghi chú vận hành
+
+- Các file trong `BE_vpn/app/static/assets/` là output build frontend, hash tên file sẽ đổi sau mỗi lần build.
+- Billing loop backend chạy mỗi 60 giây để tính phí các phiên active.
+- MoMo IPN cần URL public truy cập được từ MoMo; localhost chỉ dùng được khi có tunnel hoặc môi trường test phù hợp.
+- Database production cần backup volume PostgreSQL thường xuyên.

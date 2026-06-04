@@ -1,39 +1,56 @@
-# VPN Gaming UI Mockup Components
+# tmp_ui_code - UI prototypes
 
-Có 2 file React:
+Thư mục này chứa các component React thử nghiệm được dùng làm bản nháp giao diện cho VPN Gaming. Đây không phải source production đang chạy.
 
-1. `GamingAppDashboard.jsx`  
-   - Trang `/app` kiểu Mini Shadow PC / Cloud Gaming Dashboard.
+## File hiện có
 
-2. `SessionLauncherPage.jsx`  
-   - Trang khởi tạo phiên cloud rig: Boot VM → VPN route → Sunshine → Moonlight.
+| File | Vai trò |
+| --- | --- |
+| `GamingAppDashboard.jsx` | Mockup dashboard người dùng kiểu cloud gaming/play center. |
+| `SessionLauncherPage.jsx` | Mockup màn khởi tạo phiên: boot VM, VPN route, Sunshine và Moonlight. |
 
-## Cài icon
+## Source production nằm ở đâu
 
-```bash
-npm install lucide-react
-```
-
-## Cách dùng
-
-Copy 2 file vào:
+Các màn hình thật của frontend hiện nằm trong:
 
 ```text
-FE_vpn/src/pages/
+FE_vpn/src/pages/Dashboard.jsx
+FE_vpn/src/pages/Machines.jsx
+FE_vpn/src/pages/Wizard.jsx
+FE_vpn/src/pages/History.jsx
+FE_vpn/src/pages/Subscriptions.jsx
+FE_vpn/src/pages/Support.jsx
+FE_vpn/src/pages/Admin.jsx
 ```
 
-Ví dụ trong `App.jsx`:
+Router thật nằm trong:
 
-```jsx
-import GamingAppDashboard from "./pages/GamingAppDashboard";
-import SessionLauncherPage from "./pages/SessionLauncherPage";
-
-export default function App() {
-  return <GamingAppDashboard />;
-}
+```text
+FE_vpn/src/App.jsx
 ```
 
-Hoặc dùng router để map:
-- `/app` → `GamingAppDashboard`
-- `/wizard` hoặc `/launch` → `SessionLauncherPage`
+## Khi nào dùng thư mục này
+
+Dùng `tmp_ui_code/` như tài liệu tham khảo thiết kế hoặc nơi lấy lại ý tưởng UI cũ. Không nên copy nguyên file vào `FE_vpn/src/pages/` nếu chưa đối chiếu với:
+
+- API wrapper hiện tại trong `FE_vpn/src/api/`;
+- auth/session state trong `FE_vpn/src/App.jsx`;
+- style chính trong `FE_vpn/src/App.css`, `src/index.css` và các CSS theo page;
+- route thật: `/app`, `/app/machines`, `/app/wizard`, `/app/history`, `/app/subscriptions`, `/admin-portal/*`.
+
+## Nếu muốn preview prototype
+
+Các component này là React component độc lập và cần package icon:
+
+```powershell
+cd FE_vpn
+npm install
 ```
+
+`lucide-react` đã có trong frontend hiện tại, nên thường không cần cài thêm. Nếu muốn thử lại prototype, hãy import tạm trong môi trường dev và không commit việc thay route production nếu chỉ để xem giao diện.
+
+## Ghi chú
+
+- Prototype có thể lệch với API/backend hiện tại.
+- Prototype có thể thiếu flow mới như billing PAYG, trial, snapshot/resume, topup history chỉ hiển thị giao dịch đã cộng ví.
+- Khi cần sửa giao diện đang chạy, sửa trực tiếp trong `FE_vpn/src/pages/` và CSS tương ứng.

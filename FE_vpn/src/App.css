@@ -2116,12 +2116,15 @@ select option {
   grid-area: side;
   display: grid;
   gap: 14px;
-  align-content: start;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  align-content: stretch;
 }
 
 .history-breakdown-card {
   display: grid;
   gap: 12px;
+  min-height: 0;
+  align-content: start;
 }
 
 .history-ranking-list {

@@ -1,159 +1,159 @@
-# Frontend - VPN Gaming Platform
+# FE_vpn - Frontend React/Vite
 
-**React + Vite Single Page Application (SPA)**
+Frontend của VPN Gaming là SPA React/Vite cho người dùng và admin portal. UI phục vụ cloud gaming flow: chọn máy, khởi tạo phiên, tải VPN profile, xác nhận VPN/Sunshine/Moonlight, theo dõi lịch sử, nạp tiền và quản trị hệ thống.
 
-Ứng dụng web frontend xây dựng bằng React 19, Vite, cung cấp giao diện người dùng hoàn chỉnh cho quản lý VPN sessions, máy ảo, lịch sử và thanh toán.
+## Stack
 
----
+| Thành phần | Công nghệ |
+| --- | --- |
+| Framework | React 19 |
+| Build tool | Vite qua `rolldown-vite` 7.2.5 |
+| Routing | React Router DOM 7 |
+| Icons | lucide-react |
+| Charts | Recharts |
+| HTTP | `fetch` wrapper trong `src/api/client.js` |
+| Dev server | Vite port 5173 |
+| Production container | Nginx |
 
-## 📋 Tính năng
+## Cấu trúc
 
-### Xác thực & Phân quyền
-- ✅ Đăng ký & Đăng nhập
-- ✅ Google OAuth (SSO)  
-- ✅ Quên mật khẩu / Đặt lại mật khẩu
-- ✅ JWT-based session management
-- ✅ Role-based access control (User, Admin)
-
-### Giao diện Người dùng
-- ✅ **Dashboard**: Tổng quát, giờ sử dụng, máy trống
-- ✅ **Machines**: Danh sách máy, trạng thái, ping, snapshot
-- ✅ **Wizard**: 5-bước tạo phiên (Chọn máy → Clone → Start → VPN → Media)
-- ✅ **History**: Lịch sử phiên, restore, tiếp tục phiên
-- ✅ **Support**: Logs & checklist hỗ trợ kỹ thuật
-- ✅ **Admin Panel**: Quản lý người dùng, máy, giao dịch
-
-### Tích hợp Backend
-- REST API client (Axios)
-- Real-time status updates  
-- File download (.ovpn config)
-- Payment processing (MoMo)
-
----
-
-## 🛠️ Tech Stack
-
-| Thành phần | Công nghệ | Phiên bản |
-|-----------|----------|----------|
-| **Framework** | React | 19.2.0 |
-| **Build Tool** | Vite | 7.2.5 |
-| **Routing** | React Router DOM | 7.12.0 |
-| **Charts** | Recharts | 3.7.0 |
-| **HTTP Client** | Axios | 1.13.2 |
-| **Node.js** | Node.js | 18+ |
-
----
-
-## 📁 Cấu trúc Dự án
-
-```
+```text
 FE_vpn/
-├── public/                          # Static assets
-├── src/
-│   ├── api/                         # API client functions
-│   │   ├── auth.js                  # Authentication endpoints
-│   │   ├── machines.js              # Machine management
-│   │   ├── payments.js              # Payment endpoints
-│   │   ├── admin.js                 # Admin endpoints
-│   │   ├── client.js                # Axios instance
-│   │   └── oauth.js                 # OAuth utilities
-│   │
-│   ├── components/                  # Reusable components
-│   │   ├── Header.jsx
-│   │   ├── Sidebar.jsx
-│   │   ├── Card.jsx
-│   │   ├── Button.jsx
-│   │   └── ...
-│   │
-│   ├── pages/                       # Route pages
-│   │   ├── Dashboard.jsx
-│   │   ├── Machines.jsx
-│   │   ├── Wizard.jsx
-│   │   ├── History.jsx
-│   │   ├── Support.jsx
-│   │   ├── Admin.jsx
-│   │   ├── Landing.jsx
-│   │   └── auth/
-│   │       ├── Login.jsx
-│   │       ├── Register.jsx
-│   │       ├── ForgotPassword.jsx
-│   │       ├── ResetPassword.jsx
-│   │       └── AdminLogin.jsx
-│   │
-│   ├── hooks/                       # Custom hooks
-│   ├── services/                    # Business services
-│   ├── utils/
-│   │   └── mock.js                  # Mock/session fallback data
-│   │
-│   ├── App.jsx                      # Main app component
-│   ├── main.js                      # React entry point
-│   ├── index.css                    # Global styles
-│   └── App.css                      # App styles
-│
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── nginx.conf
-├── vite.config.js
-├── package.json
-└── README.md
+|-- public/                 # Logo, GPU banners, VPN images
+|-- src/
+|   |-- api/
+|   |   |-- client.js        # request(), ApiError, API_BASE_URL
+|   |   |-- auth.js
+|   |   |-- machines.js
+|   |   |-- payments.js
+|   |   |-- subscriptions.js
+|   |   |-- admin.js
+|   |   `-- oauth.js
+|   |-- pages/
+|   |   |-- Landing.jsx
+|   |   |-- Dashboard.jsx
+|   |   |-- Machines.jsx
+|   |   |-- Wizard.jsx
+|   |   |-- Subscriptions.jsx
+|   |   |-- History.jsx
+|   |   |-- Support.jsx
+|   |   |-- Admin.jsx
+|   |   |-- landing.css
+|   |   |-- admin.css
+|   |   `-- auth/
+|   |       |-- Login.jsx
+|   |       |-- Register.jsx
+|   |       |-- ForgotPassword.jsx
+|   |       |-- ResetPassword.jsx
+|   |       |-- AdminLogin.jsx
+|   |       `-- AuthSessionNotice.jsx
+|   |-- utils/
+|   |   `-- redirect.js
+|   |-- App.jsx
+|   |-- App.css
+|   |-- index.css
+|   `-- main.js
+|-- Dockerfile
+|-- nginx.conf
+|-- vite.config.js
+|-- package.json
+|-- .env.example
+`-- README.md
 ```
 
----
+## Route trong app
 
-## 🚀 Getting Started
+### Public/auth
 
-### Cài đặt
+| Route | Component |
+| --- | --- |
+| `/` | `Landing` |
+| `/login` | `Login` |
+| `/register` | `Register` |
+| `/forgot` | `ForgotPassword` |
+| `/reset` | `ResetPassword` |
+| `/admin/login` | redirect sang `/admin-portal/login` |
+| `/admin-portal/login` | `AdminLogin` |
 
-```bash
-# 1. Install dependencies
+### User shell
+
+Các route này yêu cầu user role `user`.
+
+| Route | Component |
+| --- | --- |
+| `/app` | `Dashboard` |
+| `/app/machines` | `Machines` |
+| `/app/wizard` | `Wizard` |
+| `/app/subscriptions` | `Subscriptions` |
+| `/app/history` | `History` |
+| `/app/support` | `Support` |
+
+### Admin portal
+
+Các route này yêu cầu user role `admin`.
+
+| Route | Component |
+| --- | --- |
+| `/admin-portal/overview` | `Admin` |
+| `/admin-portal/users` | `Admin` |
+| `/admin-portal/machines` | `Admin` |
+| `/admin-portal/sessions` | `Admin` |
+| `/admin-portal/billing` | `Admin` |
+| `/admin-portal/settings` | `Admin` |
+
+## Chạy local
+
+```powershell
+cd FE_vpn
 npm install
-
-# 2. Create environment file
-cp .env.example .env.development
-
-# 3. Update VITE_API_BASE_URL if needed
-# By default: http://localhost:8080
-```
-
-### Chạy Development Server
-
-```bash
+copy .env.example .env.development
 npm run dev
-
-# Visit: http://localhost:5173
 ```
 
-### Build cho Production
+Mở:
 
-```bash
-npm run build
-
-# Output: ./dist/
+```text
+http://localhost:5173
 ```
 
-### Preview Production Build
+## Cấu hình API
 
-```bash
-npm run preview
+`src/api/client.js` dùng:
+
+```js
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 ```
 
----
+Nếu `VITE_API_BASE_URL` rỗng, request sẽ gọi cùng origin. Trong dev, `vite.config.js` proxy các path API về backend local `http://localhost:8000`:
 
-## 📝 Environment Variables
+```text
+/auth
+/machines
+/payments
+/subscriptions
+/admin
+/health
+```
 
-### Development (.env.development)
+Khuyến nghị khi chạy backend bằng `uvicorn` ở port 8000:
+
+```env
+VITE_API_BASE_URL=
+```
+
+Nếu chạy backend container từ root `docker-compose.yml`, backend publish ra host port 8080:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8080
-VITE_APP_NAME=VPN Gaming Platform
-VITE_API_TIMEOUT=30000
-VITE_DEBUG=true
-VITE_MOCK_API=false
 ```
 
-### Production (.env.production)
+Production với Nginx cùng domain thường để trống:
+
+```env
+VITE_API_BASE_URL=
+```
+
+## Biến môi trường
 
 ```env
 VITE_API_BASE_URL=
@@ -163,189 +163,100 @@ VITE_DEBUG=false
 VITE_MOCK_API=false
 ```
 
----
+Lưu ý: `VITE_API_TIMEOUT` hiện là cấu hình dự phòng; API client hiện dùng `fetch` và chưa tự áp timeout.
 
-## 🔌 API Integration
+## Scripts
 
-### Cấu hình API Client
+| Command | Mô tả |
+| --- | --- |
+| `npm run dev` | Chạy Vite dev server |
+| `npm start` | Alias của `npm run dev` |
+| `npm run build` | Build production |
+| `npm run preview` | Preview build |
+| `npm run lint` | ESLint |
 
-Tất cả API requests đi qua `src/api/client.js` sử dụng Axios:
+## Build output
 
-```javascript
-// src/api/client.js
-import axios from 'axios'
+Trong local, `vite.config.js` đặt:
 
-const client = axios.create({
-  baseURL: process.env.VITE_API_BASE_URL || 'http://localhost:8080',
-  timeout: 30000,
-})
-
-// Auto-inject JWT token
-client.interceptors.request.use(config => {
-  const token = localStorage.getItem('auth_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-export default client
+```js
+outDir: path.resolve(__dirname, '../BE_vpn/app/static')
 ```
 
-### Sử dụng API trong Components
+Vì vậy:
 
-```javascript
-import { useEffect, useState } from 'react'
-import { getMachines } from '../api/machines'
-
-export default function Machines() {
-  const [machines, setMachines] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    getMachines()
-      .then(setMachines)
-      .finally(() => setLoading(false))
-  }, [])
-
-  if (loading) return <div>Loading...</div>
-
-  return (
-    <div>
-      {machines.map(m => (
-        <div key={m.id}>{m.name}</div>
-      ))}
-    </div>
-  )
-}
+```powershell
+npm run build
 ```
 
----
+sẽ cập nhật:
 
-## 🐳 Docker Deployment
-
-### Build Image
-
-```bash
-docker build -t vpn-gaming-frontend:latest .
+```text
+BE_vpn/app/static/index.html
+BE_vpn/app/static/assets/*
 ```
 
-### Run Container
+Backend FastAPI có thể serve SPA sau build.
 
-```bash
-docker run -p 80:80 -d \
-  --name vpn-frontend \
-  vpn-gaming-frontend:latest
+Trong Docker build, `DOCKER_BUILD=true`, output là `FE_vpn/dist` để Nginx copy vào `/usr/share/nginx/html`.
+
+## Docker/Nginx
+
+Build riêng frontend:
+
+```powershell
+cd FE_vpn
+docker build -t vpn-gaming-frontend .
 ```
 
-### Multi-stage Dockerfile
+`nginx.conf` hiện proxy:
 
-```dockerfile
-# Stage 1: Build
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
-
-# Stage 2: Serve
-FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+```text
+/auth
+/machines
+/payments
+/admin
+/docs
+/openapi.json
+/api/health
 ```
 
----
+Frontend code có gọi `/subscriptions`. Nếu dùng frontend container riêng, cần thêm `location /subscriptions` proxy về backend hoặc dùng backend static serving thay cho frontend Nginx container.
 
-## 🎨 UI Design System
+## Các màn hình chính
 
-### Color Palette
-- **Primary**: #F45D48 (Orange-Red)
-- **Secondary**: #00B8D9 (Cyan)  
-- **Dark**: #1F2937 (Charcoal)
-- **Light**: #F3F4F6 (Light Gray)
-- **Success**: #10B981 (Green)
-- **Error**: #EF4444 (Red)
+- `Landing`: giới thiệu sản phẩm và CTA.
+- `Dashboard`: Play Center, ví, phiên hiện tại, máy đề xuất.
+- `Machines`: danh sách máy cloud, filter vùng/GPU/ping/status, start/resume.
+- `Wizard`: flow khởi tạo, tải `.ovpn`, check VPN, pair Sunshine/Moonlight, stop/snapshot.
+- `Subscriptions`: gói membership, pricing, purchase.
+- `History`: tổng quan phiên 7 ngày, timeline, export, lịch sử nạp tiền đã cộng ví.
+- `Support`: FAQ, hướng dẫn OpenVPN/Moonlight, trạng thái hệ thống.
+- `Admin`: users, machines, sessions, billing, settings.
 
-### Typography
-- **Font Family**: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif
-- **Base Size**: 16px
-- **Line Height**: 1.5
+## Payment UI rule
 
-### Components
-- **Border Radius**: 16px (cards), 8px (buttons), 4px (inputs)
-- **Spacing**: 8px grid system
-- **Shadows**: Based on elevation levels
+Tab `Nạp tiền` trong `History` chỉ hiển thị các giao dịch đã thanh toán và đã cộng vào ví (`succeeded`). Các lần mở cổng MoMo nhưng chưa thanh toán không được coi là lịch sử nạp ví của user.
 
----
+## Auth/session storage
 
-## 📝 Available Scripts
+Frontend lưu:
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server (Vite) |
-| `npm start` | Alias for `dev` |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview production build |
-| `npm run lint` | Run ESLint |
-
----
-
-## 🐛 Troubleshooting
-
-### Vite caching issues
-
-```bash
-rm -rf node_modules/.vite
-npm install
+```text
+localStorage.auth_token
+localStorage.auth_email
+localStorage.auth_user
+localStorage.active_session
+sessionStorage.post_login_redirect
 ```
 
-### API connection failed
+Nếu API trả 401, `src/api/client.js` bắn event `vpngaming:auth-expired` để `App.jsx` clear auth và redirect login.
 
-```bash
-# Check backend is running
-curl http://localhost:8080/health
+## Kiểm tra
 
-# Check VITE_API_BASE_URL
-echo $VITE_API_BASE_URL
-
-# Check CORS headers
-curl -H "Origin: http://localhost:5173" http://localhost:8080/health -v
-```
-
-### Build errors
-
-```bash
+```powershell
 npm run lint
-npm run build -- --debug
+npm run build
 ```
 
----
-
-## 📚 Resources
-
-- [React Docs](https://react.dev)
-- [Vite Guide](https://vitejs.dev)
-- [React Router](https://reactrouter.com)
-- [Axios Docs](https://axios-http.com)
-
----
-
-## 🤝 Contributing
-
-1. Create feature branch: `git checkout -b feature/your-feature`
-2. Commit: `git commit -m 'Add feature'`
-3. Push: `git push origin feature/your-feature`
-4. Open Pull Request
-
----
-
-## 📄 License
-
-MIT License - See [LICENSE](../LICENSE)
-
----
-
-**Last Updated**: March 2026 | **Maintainers**: Your Team
+Nếu màn hình vẫn dùng bundle cũ khi backend serve static, hard refresh trình duyệt bằng `Ctrl + F5`.
