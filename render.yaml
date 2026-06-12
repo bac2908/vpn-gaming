@@ -42,6 +42,12 @@ services:
         value: "false"
       - key: MOMO_ENDPOINT
         value: https://test-payment.momo.vn/v2/gateway/api/create
+      - key: MOMO_PARTNER_CODE
+        sync: false
+      - key: MOMO_ACCESS_KEY
+        sync: false
+      - key: MOMO_SECRET_KEY
+        sync: false
       - key: MOMO_REDIRECT_URL
         value: https://vpn-gaming.onrender.com/app/topup/result
       - key: MOMO_IPN_URL

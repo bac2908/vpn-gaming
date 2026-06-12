@@ -122,7 +122,31 @@ https://vpn-gaming.onrender.com/auth/google/callback
 
 Sau khi thêm biến môi trường, bấm **Manual Deploy** -> **Deploy latest commit**.
 
-## 6. Nếu muốn dùng miền miễn phí khác
+## 6. MoMo Payment
+
+MoMo cũng cần key riêng trong Render Environment. Nếu thiếu, khi bấm nạp tiền backend sẽ báo lỗi dạng:
+
+```text
+Thieu cau hinh MoMo: MOMO_PARTNER_CODE, MOMO_ACCESS_KEY, MOMO_SECRET_KEY
+```
+
+Vào service `vpn-gaming` -> **Environment** và thêm hoặc sửa các biến:
+
+```env
+MOMO_ENDPOINT=https://test-payment.momo.vn/v2/gateway/api/create
+MOMO_PARTNER_CODE=<partner code từ MoMo>
+MOMO_ACCESS_KEY=<access key từ MoMo>
+MOMO_SECRET_KEY=<secret key từ MoMo>
+MOMO_REDIRECT_URL=https://vpn-gaming.onrender.com/app/topup/result
+MOMO_IPN_URL=https://vpn-gaming.onrender.com/payments/momo/ipn
+MOMO_REQUEST_TYPE=payWithMethod
+```
+
+Nếu dùng môi trường test, lấy bộ test key từ MoMo Developers: https://developers.momo.vn/v2/
+
+Sau khi lưu biến, bấm **Save, rebuild, and deploy** hoặc **Manual Deploy** -> **Deploy latest commit**.
+
+## 7. Nếu muốn dùng miền miễn phí khác
 
 Render đã cho miền miễn phí `*.onrender.com`, dễ nhất và có HTTPS sẵn.
 

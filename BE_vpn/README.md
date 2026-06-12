@@ -309,6 +309,13 @@ MOMO_REQUEST_TYPE=payWithMethod
 
 `MOMO_IPN_URL` cần public URL nếu muốn MoMo gọi được từ internet.
 
+Render production:
+
+```env
+MOMO_REDIRECT_URL=https://vpn-gaming.onrender.com/app/topup/result
+MOMO_IPN_URL=https://vpn-gaming.onrender.com/payments/momo/ipn
+```
+
 ## Serve frontend từ backend
 
 Nếu `BE_vpn/app/static/index.html` tồn tại, backend mount:
