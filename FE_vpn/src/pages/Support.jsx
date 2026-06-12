@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { createSupportTicket, listMySupportTickets } from '../api/support'
+import { CLIENT_TOOL_LINKS } from '../utils/clientTools'
 
 const SUPPORT_TYPE_LABELS = {
     payment: 'Thanh toán',
@@ -470,10 +471,10 @@ function Documentation() {
                   <h5 className="stepper-title">Tải ứng dụng OpenVPN Connect</h5>
                   <p className="stepper-desc">Tải & cài đặt phần mềm kết nối VPN chính thức phù hợp với máy của bạn.</p>
                   <div className="stepper-actions">
-                    <a href="https://openvpn.net/client-connect-vpn-for-windows/" target="_blank" rel="noopener noreferrer" className="btn secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                    <a href={CLIENT_TOOL_LINKS.openvpn} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
                       📥 Windows Client
                     </a>
-                    <a href="https://openvpn.net/vpn-client/" target="_blank" rel="noopener noreferrer" className="btn ghost" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                    <a href={CLIENT_TOOL_LINKS.openvpn} target="_blank" rel="noopener noreferrer" className="btn ghost" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
                       Tải OS khác
                     </a>
                   </div>
@@ -524,7 +525,7 @@ function Documentation() {
                   <h5 className="stepper-title">Cài đặt phần mềm Moonlight</h5>
                   <p className="stepper-desc">Tải Moonlight client về máy khách của bạn (hỗ trợ PC, laptop, điện thoại, máy tính bảng...).</p>
                   <div className="stepper-actions">
-                    <a href="https://moonlight-stream.org/" target="_blank" rel="noopener noreferrer" className="btn secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                    <a href={CLIENT_TOOL_LINKS.moonlight} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
                       📥 Tải Moonlight Client
                     </a>
                   </div>

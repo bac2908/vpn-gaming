@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { getActiveSession, listMachines } from '../api/machines'
 import { getMySubscription } from '../api/subscriptions'
+import { CLIENT_TOOL_LINKS, CLIENT_TOOL_STEPS, SUNSHINE_HOST_NOTE } from '../utils/clientTools'
 
 const securityCards = [
     {
@@ -237,6 +238,47 @@ function SidePanel({ title, heading, desc, button, href, icon = 'settings' }) {
     )
 }
 
+function ClientToolPrepCard() {
+    return (
+        <section className="gd-preflight-card" aria-labelledby="gd-preflight-title">
+            <div className="gd-preflight-head">
+                <div>
+                    <p>Chuẩn bị trước khi chơi</p>
+                    <h2 id="gd-preflight-title">Cài OpenVPN Connect và Moonlight trước</h2>
+                    <span>{SUNSHINE_HOST_NOTE}</span>
+                </div>
+                <div className="gd-preflight-actions">
+                    <a className="btn secondary" href={CLIENT_TOOL_LINKS.openvpn} target="_blank" rel="noopener noreferrer">
+                        <DashIcon name="shield" />
+                        Tải OpenVPN
+                    </a>
+                    <a className="btn secondary" href={CLIENT_TOOL_LINKS.moonlight} target="_blank" rel="noopener noreferrer">
+                        <DashIcon name="monitor" />
+                        Tải Moonlight
+                    </a>
+                </div>
+            </div>
+
+            <div className="gd-preflight-grid">
+                {CLIENT_TOOL_STEPS.map((step, index) => (
+                    <article className="gd-preflight-step" key={step.id}>
+                        <strong>{index + 1}</strong>
+                        <div>
+                            <h3>{step.title}</h3>
+                            <p>{step.desc}</p>
+                        </div>
+                    </article>
+                ))}
+            </div>
+
+            <div className="gd-preflight-footer">
+                <Link to={CLIENT_TOOL_LINKS.openvpnGuide}>Hướng dẫn OpenVPN</Link>
+                <Link to={CLIENT_TOOL_LINKS.moonlightGuide}>Hướng dẫn Moonlight</Link>
+            </div>
+        </section>
+    )
+}
+
 function Dashboard({ ctx }) {
     const location = useLocation()
     const [machines, setMachines] = useState([])
@@ -410,6 +452,8 @@ function Dashboard({ ctx }) {
                     ariaLabel="Mở trang gói dịch vụ và số dư"
                 />
             </section>
+
+            <ClientToolPrepCard />
 
             <section className="gd-main-grid">
                 <div className="gd-route-panel">

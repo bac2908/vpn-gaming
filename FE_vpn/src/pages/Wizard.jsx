@@ -28,6 +28,7 @@ import {
     startMachine,
     stopSession,
 } from '../api/machines'
+import { CLIENT_TOOL_LINKS, CLIENT_TOOL_STEPS, SUNSHINE_HOST_NOTE } from '../utils/clientTools'
 
 const MACHINE_CARD_IMAGES = [
     '/gpu-banner-1.png',
@@ -178,11 +179,13 @@ function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSun
     const lines = isPlay
         ? [
             'Copy IP local của Gaming VM.',
-            'Mở app Moonlight trên thiết bị chơi, chọn Add PC và nhập IP local.',
+            'Nếu chưa có Moonlight, tải và cài Moonlight trên thiết bị chơi trước.',
+            'Mở app Moonlight, chọn Add PC và nhập IP local.',
             'Khi Moonlight hiện PIN, mở Sunshine Web và nhập PIN đó.',
             'Sau khi pair thành công, quay lại web bấm Xác nhận đã ghép Sunshine.',
         ]
         : [
+            'Nếu chưa có OpenVPN Connect, tải và cài ứng dụng trước.',
             'Tải file VPN profile của phiên hiện tại.',
             'Import profile vào OpenVPN Connect.',
             'Kết nối VPN rồi quay lại web nhấn VPN đã kết nối.',
@@ -202,8 +205,18 @@ function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSun
                 <ol className="wizard-help-list">
                     {lines.map((line) => <li key={line}>{line}</li>)}
                 </ol>
+                <p className="wizard-help-note">
+                    {isPlay ? SUNSHINE_HOST_NOTE : 'File .ovpn chỉ dùng cho phiên hiện tại. Khi tạo phiên mới, hãy tải profile mới rồi import lại vào OpenVPN Connect.'}
+                </p>
+                {!isPlay && (
+                    <div className="actions">
+                        <a className="btn secondary" href={CLIENT_TOOL_LINKS.openvpn} target="_blank" rel="noopener noreferrer">Tải OpenVPN Connect</a>
+                        <a className="btn ghost" href={CLIENT_TOOL_LINKS.openvpnGuide}>Xem hướng dẫn VPN</a>
+                    </div>
+                )}
                 {isPlay && (
                     <div className="actions">
+                        <a className="btn secondary" href={CLIENT_TOOL_LINKS.moonlight} target="_blank" rel="noopener noreferrer">Tải Moonlight</a>
                         <button type="button" className="btn secondary" onClick={onCopyIp} disabled={!session?.ip_address}>Copy IP VM</button>
                         <button type="button" className="btn ghost" onClick={onOpenSunshine} disabled={!session?.ip_address}>Mở Sunshine Web</button>
                         <button
@@ -241,6 +254,7 @@ function Wizard({ ctx }) {
     const [launchLogs, setLaunchLogs] = useState([])
     const [lastEndedSession, setLastEndedSession] = useState(null)
     const [now, setNow] = useState(() => Date.now())
+    const [toolsReady, setToolsReady] = useState(() => localStorage.getItem('vpn_gaming_client_tools_ready') === 'true')
     const launchTimersRef = useRef([])
 
     const params = useMemo(() => new URLSearchParams(location.search), [location.search])
@@ -268,6 +282,12 @@ function Wizard({ ctx }) {
                 state,
             },
         ])
+    }
+
+    const handleToolsReadyChange = (event) => {
+        const checked = event.target.checked
+        setToolsReady(checked)
+        localStorage.setItem('vpn_gaming_client_tools_ready', checked ? 'true' : 'false')
     }
 
     useEffect(() => () => {
@@ -445,7 +465,7 @@ function Wizard({ ctx }) {
         })
         addLaunchLog(`${machine.code || 'VN-01'} selected`, 'Cloud rig selected', 'OK')
         addLaunchLog('Boot VM', 'Đang khởi động VM', 'RUN')
-        setActionMessage('Đang khởi động VM...')
+        setActionMessage(toolsReady ? 'Đang khởi động VM...' : 'Đang khởi động VM. Trong lúc chờ, hãy cài OpenVPN Connect và Moonlight nếu chưa có.')
 
         try {
             const [started] = await Promise.all([
@@ -469,7 +489,7 @@ function Wizard({ ctx }) {
             addLaunchLog('VM boot', 'VM boot successful', 'OK')
             addLaunchLog('VPN profile', 'VPN profile created', 'OK')
             addLaunchLog('VPN route', 'Waiting for user VPN import', 'WAIT')
-            setActionMessage('VM Online. Hãy tải VPN profile, import vào OpenVPN rồi bấm VPN đã kết nối.')
+            setActionMessage('VM Online. Hãy tải VPN profile, import vào OpenVPN Connect rồi bấm Tôi đã kết nối VPN. Sau đó mở Moonlight để thêm PC bằng IP local.')
         } catch (err) {
             setBooting(false)
             setLaunchFlow({
@@ -608,7 +628,7 @@ function Wizard({ ctx }) {
                     return updated
                 })
                 addLaunchLog('VPN route', 'VPN route established', 'OK')
-                setActionMessage(`VPN Online. IP local: ${localIp}. Bây giờ hãy mở Sunshine/Moonlight để pair.`)
+                setActionMessage(`VPN Online. IP local: ${localIp}. Bây giờ hãy mở Moonlight, thêm PC bằng IP này rồi nhập PIN trong Sunshine Web.`)
             })
             return
         }
@@ -618,7 +638,7 @@ function Wizard({ ctx }) {
             localStorage.setItem('active_session', JSON.stringify(checked))
             setLaunchFlow((prev) => ({ ...prev, vpn: 'done' }))
             addLaunchLog('VPN route', 'VPN route established', 'OK')
-            setActionMessage(`VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}.`)
+            setActionMessage(`VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}. Mở Moonlight, thêm PC bằng IP này rồi nhập PIN trong Sunshine Web.`)
         } catch (err) {
             setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
             setError(err.message || 'Không thể kiểm tra kết nối VPN')
@@ -813,7 +833,7 @@ function Wizard({ ctx }) {
         { title: 'Cloud Rig', desc: machine ? 'Selected' : 'Chưa chọn máy', time: machine ? 'Selected' : '--:--:--', state: machine ? 'done' : 'wait' },
         { title: 'Boot VM', desc: bootState === 'active' ? 'Đang khởi động VM...' : 'Khởi động máy ảo', time: bootTime, state: bootState },
         { title: 'VPN Route', desc: vpnState === 'active' ? vpnActiveDesc : vpnWaitingDesc, time: vpnDisplayTime, state: vpnState },
-        { title: 'Sunshine pairing', desc: 'Ghép nối Sunshine', time: sunshineTime, state: sunshineState },
+        { title: 'Sunshine pairing', desc: 'Nhập PIN từ Moonlight vào Sunshine Web', time: sunshineTime, state: sunshineState },
         { title: 'Moonlight stream', desc: 'Sẵn sàng vào chơi', time: moonlightTime, state: moonlightState },
     ]
     const fallbackLogs = [
@@ -949,6 +969,40 @@ function Wizard({ ctx }) {
                         <div><span>IP Local</span><strong>{session?.ip_address || '--'}</strong></div>
                         <div><span>Thời gian chơi</span><strong>{sessionDuration}</strong></div>
                     </div>
+                </div>
+            </section>
+
+            <section className="sl-tool-prep" aria-labelledby="sl-tool-prep-title">
+                <div className="sl-tool-prep-copy">
+                    <p className="sl-next-kicker">CẦN CÀI TRÊN MÁY CỦA BẠN</p>
+                    <h2 id="sl-tool-prep-title">OpenVPN Connect trước, Moonlight sau</h2>
+                    <span>{SUNSHINE_HOST_NOTE}</span>
+                    <label className="sl-tool-ready-check">
+                        <input type="checkbox" checked={toolsReady} onChange={handleToolsReadyChange} />
+                        Tôi đã cài OpenVPN Connect và Moonlight trên thiết bị chơi.
+                    </label>
+                </div>
+                <div className="sl-tool-prep-list">
+                    {CLIENT_TOOL_STEPS.slice(0, 2).map((step, index) => (
+                        <article key={step.id}>
+                            <strong>{index + 1}</strong>
+                            <div>
+                                <h3>{step.title}</h3>
+                                <p>{step.desc}</p>
+                            </div>
+                        </article>
+                    ))}
+                </div>
+                <div className="sl-tool-prep-actions">
+                    <a className="btn secondary" href={CLIENT_TOOL_LINKS.openvpn} target="_blank" rel="noopener noreferrer">
+                        Tải OpenVPN
+                    </a>
+                    <a className="btn secondary" href={CLIENT_TOOL_LINKS.moonlight} target="_blank" rel="noopener noreferrer">
+                        Tải Moonlight
+                    </a>
+                    <a className="btn ghost" href={CLIENT_TOOL_LINKS.openvpnGuide}>
+                        Xem hướng dẫn
+                    </a>
                 </div>
             </section>
 
@@ -1104,7 +1158,7 @@ function Wizard({ ctx }) {
                                 <span className="sl-ready-icon"><Sun className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
                                     <strong>Sunshine {sunshinePaired ? 'đã pairing' : 'chờ pairing'}</strong>
-                                    <p className="sl-ready-desc">{sunshinePaired ? 'Thiết bị đã được ghép nối' : 'Chờ ghép nối Sunshine'}</p>
+                                    <p className="sl-ready-desc">{sunshinePaired ? 'Thiết bị đã được ghép nối' : 'Sunshine chạy trên máy cloud, chờ PIN từ Moonlight'}</p>
                                 </div>
                                 <em className={`sl-ready-status ${sunshinePaired ? 'text-emerald-400' : pairingSunshine ? 'text-yellow-400' : 'text-slate-500'}`}>
                                     {sunshinePaired ? 'Sẵn sàng' : pairingSunshine ? 'Đang ghép' : 'Chờ xử lý'}
@@ -1115,7 +1169,7 @@ function Wizard({ ctx }) {
                                 <span className="sl-ready-icon"><Moon className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
                                     <strong>{moonlightState === 'done' ? 'Moonlight sẵn sàng' : moonlightState === 'active' ? 'Moonlight đang pairing...' : 'Moonlight chưa sẵn sàng'}</strong>
-                                    <p className="sl-ready-desc">{moonlightState === 'done' ? 'Sẵn sàng truyền phát game' : moonlightState === 'active' ? 'Testing stream...' : 'Chưa thể stream'}</p>
+                                    <p className="sl-ready-desc">{moonlightState === 'done' ? 'Sẵn sàng truyền phát game' : moonlightState === 'active' ? 'Testing stream...' : 'Cần app Moonlight để thêm PC bằng IP local'}</p>
                                 </div>
                                 <em className={`sl-ready-status ${moonlightState === 'done' ? 'text-emerald-400' : moonlightState === 'active' ? 'text-yellow-400' : 'text-slate-500'}`}>
                                     {moonlightState === 'done' ? 'Ready' : moonlightState === 'active' ? 'Đang xử lý' : 'Chờ xử lý'}
@@ -1130,6 +1184,19 @@ function Wizard({ ctx }) {
                             <p className="sl-next-kicker">TIẾP THEO</p>
                             <h3>{vpnOnline ? 'Pair Moonlight' : 'Kết nối VPN'}</h3>
                             <span>{vpnOnline ? 'Copy IP, thêm PC trong Moonlight, nhập PIN trong Sunshine rồi xác nhận đã pair.' : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
+                            <div className="sl-tool-mini">
+                                <strong>{vpnOnline ? 'Dùng Moonlight trên thiết bị chơi' : 'Dùng OpenVPN Connect để mở file .ovpn'}</strong>
+                                <p>{vpnOnline ? 'Moonlight là app người chơi mở để nhập IP local. Sunshine là host đã có trên máy cloud và chỉ dùng để nhập PIN pairing.' : 'Nếu chưa cài OpenVPN Connect, tải trước rồi mới import file .ovpn của phiên này.'}</p>
+                                <div className="sl-tool-mini-actions">
+                                    {!vpnOnline && (
+                                        <a href={CLIENT_TOOL_LINKS.openvpn} target="_blank" rel="noopener noreferrer">Tải OpenVPN Connect</a>
+                                    )}
+                                    {vpnOnline && (
+                                        <a href={CLIENT_TOOL_LINKS.moonlight} target="_blank" rel="noopener noreferrer">Tải Moonlight</a>
+                                    )}
+                                    <a href={vpnOnline ? CLIENT_TOOL_LINKS.moonlightGuide : CLIENT_TOOL_LINKS.openvpnGuide}>Xem hướng dẫn</a>
+                                </div>
+                            </div>
                             {!vpnOnline && vpnProfileDownloaded && (
                                 <ol className="vpn-import-steps" aria-label="Các bước kết nối VPN">
                                     <li><strong>1</strong><span>Mở file .ovpn vừa tải trong OpenVPN Connect.</span></li>
