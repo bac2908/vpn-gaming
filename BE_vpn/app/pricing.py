@@ -7,7 +7,7 @@ from math import ceil
 from zoneinfo import ZoneInfo
 
 
-VN_TZ = ZoneInfo("Asia/Saigon")
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 TRIAL_DAILY_MINUTES = 15
 SAMPLE_HIGH_END_RATE_PER_MINUTE = 250
 DEFAULT_PAYG_RATE_PER_MINUTE = 80
