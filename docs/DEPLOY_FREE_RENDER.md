@@ -87,9 +87,10 @@ Password: mật khẩu bạn nhập ở SEED_ADMIN_PASSWORD
 
 ## 5. Đăng nhập, đăng ký, Google OAuth
 
-Mặc định bản Render Free không cấu hình SMTP và Google OAuth. Ứng dụng sẽ tự xử lý như sau:
+Mặc định bản Render Free có thể chưa có SMTP và Google OAuth. Ứng dụng sẽ tự xử lý như sau:
 
-- Ẩn nút **Tiếp tục với Google** nếu chưa có `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
+- Luôn giữ nút **Tiếp tục với Google** trên màn đăng nhập/đăng ký.
+- Nếu chưa có `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, bấm nút Google sẽ báo cần cấu hình OAuth.
 - Ẩn **Quên mật khẩu?** nếu chưa có SMTP thật.
 - Tự kích hoạt tài khoản mới sau khi đăng ký nếu chưa có SMTP, để demo/deploy free dùng được ngay.
 - Tài khoản đã lỡ ở trạng thái pending trước đó sẽ được kích hoạt khi đăng nhập đúng mật khẩu nếu chưa có SMTP.
@@ -110,7 +111,13 @@ Nếu muốn bật Google OAuth, thêm:
 ```env
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=https://vpn-gaming-abcd.onrender.com/auth/google/callback
+GOOGLE_REDIRECT_URI=https://vpn-gaming.onrender.com/auth/google/callback
+```
+
+Trong Google Cloud Console, OAuth Client phải có **Authorized redirect URI** đúng y hệt:
+
+```text
+https://vpn-gaming.onrender.com/auth/google/callback
 ```
 
 Sau khi thêm biến môi trường, bấm **Manual Deploy** -> **Deploy latest commit**.

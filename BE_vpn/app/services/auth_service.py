@@ -85,6 +85,15 @@ class AuthService:
             ]
         )
 
+    def _raise_google_not_configured(self) -> None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Google OAuth chua duoc cau hinh. Hay them GOOGLE_CLIENT_ID, "
+                "GOOGLE_CLIENT_SECRET va GOOGLE_REDIRECT_URI tren Render."
+            ),
+        )
+
     def auth_config(self) -> schemas.AuthPublicConfigOut:
         smtp_configured = self._smtp_configured()
         return schemas.AuthPublicConfigOut(
@@ -463,7 +472,7 @@ class AuthService:
 
     def google_login(self) -> dict:
         if not self._google_oauth_configured():
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chua cau hinh Google OAuth")
+            self._raise_google_not_configured()
 
         params = {
             "client_id": self.settings.google_client_id,
@@ -479,8 +488,8 @@ class AuthService:
     def google_callback(self, code: str | None):
         if not code:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thieu ma xac thuc")
-        if not self.settings.google_client_id or not self.settings.google_client_secret or not self.settings.google_redirect_uri:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chua cau hinh Google OAuth")
+        if not self._google_oauth_configured():
+            self._raise_google_not_configured()
 
         token_resp = httpx.post(
             "https://oauth2.googleapis.com/token",

@@ -171,6 +171,26 @@ def test_auth_config_disables_external_auth_without_provider_settings(auth_servi
     assert config.registration_auto_active is True
 
 
+def test_google_login_requires_full_oauth_config(auth_service: AuthService) -> None:
+    with pytest.raises(HTTPException) as exc:
+        auth_service.google_login()
+
+    assert exc.value.status_code == 400
+    assert "GOOGLE_CLIENT_ID" in exc.value.detail
+
+
+def test_google_login_returns_google_auth_url_when_configured(auth_service: AuthService) -> None:
+    auth_service.settings.google_client_id = "client-id"
+    auth_service.settings.google_client_secret = "client-secret"
+    auth_service.settings.google_redirect_uri = "https://vpn-gaming.onrender.com/auth/google/callback"
+
+    result = auth_service.google_login()
+
+    assert result["auth_url"].startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+    assert "client_id=client-id" in result["auth_url"]
+    assert "redirect_uri=https%3A%2F%2Fvpn-gaming.onrender.com%2Fauth%2Fgoogle%2Fcallback" in result["auth_url"]
+
+
 def test_register_auto_activates_when_smtp_is_not_configured(
     auth_service: AuthService,
     monkeypatch: pytest.MonkeyPatch,

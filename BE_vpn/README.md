@@ -287,6 +287,14 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
 ```
 
+Production Render:
+
+```env
+GOOGLE_REDIRECT_URI=https://vpn-gaming.onrender.com/auth/google/callback
+```
+
+`GOOGLE_CLIENT_ID` và `GOOGLE_CLIENT_SECRET` phải được nhập trong Render Environment, không commit vào repo.
+
 ## MoMo env
 
 ```env

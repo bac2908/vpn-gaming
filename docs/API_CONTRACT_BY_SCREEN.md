@@ -16,6 +16,10 @@
   - email_verification_required: boolean
   - password_reset_enabled: boolean
   - registration_auto_active: boolean
+- UI behavior:
+  - Google button is always visible.
+  - If google_oauth_enabled is false, clicking Google shows a configuration message.
+  - If google_oauth_enabled is true, clicking Google redirects to Google OAuth.
 - Body:
   - email: string
   - password: string

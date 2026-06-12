@@ -111,6 +111,10 @@ function Register({ ctx }) {
 
     const onGoogle = async () => {
         setError('')
+        if (!authConfig.google_oauth_enabled) {
+            setError('Google OAuth chưa được cấu hình trên Render. Vui lòng thêm GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET và GOOGLE_REDIRECT_URI rồi deploy lại.')
+            return
+        }
         setLoadingGoogle(true)
         try {
             window.sessionStorage?.setItem('post_login_redirect', userRedirect)
@@ -242,14 +246,16 @@ function Register({ ctx }) {
                     <button className="btn primary" type="submit" disabled={loading || !acceptedTerms}>
                         {loading ? 'Đang đăng ký...' : 'Đăng ký'}
                     </button>
-                    {authConfig.google_oauth_enabled ? (
-                        <>
-                            <div className="auth-divider"><span>Hoặc</span></div>
-                            <button className="btn ghost" type="button" onClick={onGoogle} disabled={loadingGoogle || !acceptedTerms}>
-                                {loadingGoogle ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}
-                            </button>
-                        </>
-                    ) : null}
+                    <div className="auth-divider"><span>Hoặc</span></div>
+                    <button
+                        className="btn ghost"
+                        type="button"
+                        onClick={onGoogle}
+                        disabled={loadingGoogle || !acceptedTerms}
+                        title={authConfig.google_oauth_enabled ? 'Đăng ký bằng Google' : 'Cần cấu hình Google OAuth trên Render'}
+                    >
+                        {loadingGoogle ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}
+                    </button>
                     <div className="auth-link-line">
                         <span className="muted">Đã có tài khoản?</span>
                         <Link to={buildLoginRedirect(userRedirect)}>Đăng nhập</Link>
