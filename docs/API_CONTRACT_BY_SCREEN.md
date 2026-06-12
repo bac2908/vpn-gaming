@@ -8,7 +8,14 @@
 
 ### Login
 - UI: /login
-- Endpoint: POST /auth/login
+- Endpoints:
+  - GET /auth/config
+  - POST /auth/login
+- GET /auth/config 200 response:
+  - google_oauth_enabled: boolean
+  - email_verification_required: boolean
+  - password_reset_enabled: boolean
+  - registration_auto_active: boolean
 - Body:
   - email: string
   - password: string
@@ -22,13 +29,18 @@
 
 ### Register
 - UI: /register
-- Endpoint: POST /auth/register
+- Endpoints:
+  - GET /auth/config
+  - POST /auth/register
 - Body:
   - email
   - password
   - display_name
 - 201 response:
   - access_token, token_type, user
+- Behavior:
+  - SMTP configured: account is pending until email verification.
+  - SMTP missing: account is active immediately for free/demo deploy.
 - Errors:
   - 409 email existed
   - 400 validation

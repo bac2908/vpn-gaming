@@ -66,6 +66,34 @@ class AuthService:
                 policy[key] = value
         return policy
 
+    def _smtp_configured(self) -> bool:
+        return all(
+            [
+                getattr(self.settings, "smtp_host", None),
+                getattr(self.settings, "smtp_user", None),
+                getattr(self.settings, "smtp_pass", None),
+                getattr(self.settings, "smtp_from", None),
+            ]
+        )
+
+    def _google_oauth_configured(self) -> bool:
+        return all(
+            [
+                getattr(self.settings, "google_client_id", None),
+                getattr(self.settings, "google_client_secret", None),
+                getattr(self.settings, "google_redirect_uri", None),
+            ]
+        )
+
+    def auth_config(self) -> schemas.AuthPublicConfigOut:
+        smtp_configured = self._smtp_configured()
+        return schemas.AuthPublicConfigOut(
+            google_oauth_enabled=self._google_oauth_configured(),
+            email_verification_required=smtp_configured,
+            password_reset_enabled=smtp_configured,
+            registration_auto_active=not smtp_configured,
+        )
+
     def _check_rate_limit(self, action: str, identifier: str, max_attempts: int, window_seconds: int) -> None:
         now = datetime.utcnow()
         key = f"{action}:{identifier.strip().lower()}"
@@ -234,40 +262,49 @@ class AuthService:
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email da ton tai")
 
+        requires_email_verification = self._smtp_configured()
         user = self.repo.create_user(
             email=payload.email,
             display_name=payload.display_name or payload.email.split("@")[0],
-            status="pending",
+            status="pending" if requires_email_verification else "active",
         )
         self.repo.create_credential(user=user, password_hash=security.hash_password(payload.password))
 
-        raw_token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-        self.repo.create_email_verification(
-            user=user,
-            token_hash=token_hash,
-            expires_at=datetime.utcnow() + timedelta(minutes=self.settings.verification_expire_min),
-        )
+        raw_token = None
+        if requires_email_verification:
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+            self.repo.create_email_verification(
+                user=user,
+                token_hash=token_hash,
+                expires_at=datetime.utcnow() + timedelta(minutes=self.settings.verification_expire_min),
+            )
 
         self.repo.commit()
         self.repo.refresh(user)
 
-        verify_link = self.settings.app_base_url.rstrip("/") + "/auth/verify-email?token=" + raw_token
-        body = (
-            "Xin chao,\n\n"
-            "Vui long bam vao lien ket sau de xac thuc email cua ban: \n"
-            f"{verify_link}\n\n"
-            "Lien ket het han sau 30 phut."
-        )
-        try:
-            send_email(self.settings, to_email=user.email, subject="Xac thuc tai khoan", body=body)
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Khong gui duoc email xac thuc",
-            ) from exc
+        if requires_email_verification and raw_token:
+            verify_link = self.settings.app_base_url.rstrip("/") + "/auth/verify-email?token=" + raw_token
+            body = (
+                "Xin chao,\n\n"
+                "Vui long bam vao lien ket sau de xac thuc email cua ban: \n"
+                f"{verify_link}\n\n"
+                "Lien ket het han sau 30 phut."
+            )
+            try:
+                send_email(self.settings, to_email=user.email, subject="Xac thuc tai khoan", body=body)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Khong gui duoc email xac thuc",
+                ) from exc
+        else:
+            self.logger.warning(
+                "SMTP chua cau hinh; tai khoan %s duoc kich hoat ngay sau khi dang ky.",
+                user.email,
+            )
 
         return self.build_auth_response(user)
 
@@ -412,7 +449,7 @@ class AuthService:
         return {"message": "Xac thuc email thanh cong"}
 
     def google_login(self) -> dict:
-        if not self.settings.google_client_id or not self.settings.google_redirect_uri:
+        if not self._google_oauth_configured():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chua cau hinh Google OAuth")
 
         params = {

@@ -85,7 +85,36 @@ Email: admin@vpngaming.com
 Password: mật khẩu bạn nhập ở SEED_ADMIN_PASSWORD
 ```
 
-## 5. Nếu muốn dùng miền miễn phí khác
+## 5. Đăng nhập, đăng ký, Google OAuth
+
+Mặc định bản Render Free không cấu hình SMTP và Google OAuth. Ứng dụng sẽ tự xử lý như sau:
+
+- Ẩn nút **Tiếp tục với Google** nếu chưa có `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
+- Ẩn **Quên mật khẩu?** nếu chưa có SMTP thật.
+- Tự kích hoạt tài khoản mới sau khi đăng ký nếu chưa có SMTP, để demo/deploy free dùng được ngay.
+
+Nếu muốn bật xác thực email và quên mật khẩu, vào service `vpn-gaming` -> **Environment** và thêm:
+
+```env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+SMTP_FROM=no-reply@your-domain.com
+SMTP_USE_TLS=true
+```
+
+Nếu muốn bật Google OAuth, thêm:
+
+```env
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://vpn-gaming-abcd.onrender.com/auth/google/callback
+```
+
+Sau khi thêm biến môi trường, bấm **Manual Deploy** -> **Deploy latest commit**.
+
+## 6. Nếu muốn dùng miền miễn phí khác
 
 Render đã cho miền miễn phí `*.onrender.com`, dễ nhất và có HTTPS sẵn.
 

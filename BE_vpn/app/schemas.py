@@ -83,6 +83,13 @@ class AuthResponse(BaseModel):
     user: UserOut
 
 
+class AuthPublicConfigOut(BaseModel):
+    google_oauth_enabled: bool = False
+    email_verification_required: bool = True
+    password_reset_enabled: bool = True
+    registration_auto_active: bool = False
+
+
 class MessageResponse(BaseModel):
     message: str
 

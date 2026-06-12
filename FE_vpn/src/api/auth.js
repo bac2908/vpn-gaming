@@ -14,6 +14,10 @@ export async function register(email, password, display_name) {
     })
 }
 
+export async function getAuthConfig() {
+    return request('/auth/config')
+}
+
 export async function forgotPassword(email) {
     return request('/auth/forgot', {
         method: 'POST',

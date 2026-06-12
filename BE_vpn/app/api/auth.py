@@ -9,6 +9,11 @@ from app.services.auth_service import AuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+@router.get("/config", response_model=schemas.AuthPublicConfigOut)
+def auth_config(auth_service: AuthService = Depends(get_auth_service)):
+    return auth_service.auth_config()
+
+
 @router.post("/login", response_model=schemas.AuthResponse)
 def login(payload: schemas.LoginRequest, auth_service: AuthService = Depends(get_auth_service)):
     return auth_service.login(payload)

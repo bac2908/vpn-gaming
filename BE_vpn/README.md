@@ -146,6 +146,7 @@ Schema đầy đủ và migrations SQL nằm trong `../database`.
 ### Auth `/auth`
 
 ```text
+GET    /auth/config
 POST   /auth/register
 POST   /auth/login
 GET    /auth/me

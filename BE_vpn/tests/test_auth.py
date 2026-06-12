@@ -131,3 +131,55 @@ def test_logout_revokes_token_once(auth_service: AuthService, monkeypatch: pytes
     assert result["message"] == "Dang xuat thanh cong"
     auth_service.repo.add_revoked_token.assert_called_once()
     auth_service.repo.commit.assert_called_once()
+
+
+def test_auth_config_disables_external_auth_without_provider_settings(auth_service: AuthService) -> None:
+    config = auth_service.auth_config()
+
+    assert config.google_oauth_enabled is False
+    assert config.email_verification_required is False
+    assert config.password_reset_enabled is False
+    assert config.registration_auto_active is True
+
+
+def test_register_auto_activates_when_smtp_is_not_configured(
+    auth_service: AuthService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = SimpleNamespace(
+        id=uuid4(),
+        email="new-player@example.com",
+        display_name="New Player",
+        role="user",
+        balance=0,
+        status="active",
+        credential=SimpleNamespace(password_hash="hashed"),
+    )
+    auth_service.repo.get_user_by_email.return_value = None
+    auth_service.repo.create_user.return_value = user
+    monkeypatch.setattr(auth_service, "_security_policy", lambda: {
+        "password_min_length": 8,
+        "password_require_upper": True,
+        "password_require_lower": True,
+        "password_require_digit": True,
+        "lockout_max_attempts": 5,
+        "lockout_minutes": 10,
+    })
+    monkeypatch.setattr(security, "hash_password", lambda password: "hashed")
+    monkeypatch.setattr(security, "create_access_token", lambda sub: "token-new")
+
+    payload = schemas.RegisterRequest(
+        email="new-player@example.com",
+        password="Secret123",
+        display_name="New Player",
+    )
+    response = auth_service.register(payload)
+
+    auth_service.repo.create_user.assert_called_once_with(
+        email="new-player@example.com",
+        display_name="New Player",
+        status="active",
+    )
+    auth_service.repo.create_email_verification.assert_not_called()
+    assert response.access_token == "token-new"
+    assert response.user.email == "new-player@example.com"

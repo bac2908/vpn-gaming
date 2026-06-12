@@ -1,16 +1,24 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Eye, EyeOff, LockKeyhole, Mail, User } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { register as registerApi } from '../../api/auth'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { getAuthConfig, normalizeUser, register as registerApi } from '../../api/auth'
 import { googleLogin } from '../../api/oauth'
 import { buildLoginRedirect, getRedirectFromSearch } from '../../utils/redirect'
 import AuthSessionNotice from './AuthSessionNotice'
 
+const defaultAuthConfig = {
+    google_oauth_enabled: false,
+    email_verification_required: true,
+    registration_auto_active: false,
+}
+
 function Register({ ctx }) {
     const [searchParams] = useSearchParams()
+    const navigate = useNavigate()
     const userRedirect = getRedirectFromSearch(searchParams, 'user')
     const adminRedirect = getRedirectFromSearch(searchParams, 'admin')
     const [form, setForm] = useState({ email: '', fullName: '', password: '', confirm: '' })
+    const [authConfig, setAuthConfig] = useState(defaultAuthConfig)
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [loadingGoogle, setLoadingGoogle] = useState(false)
@@ -19,23 +27,85 @@ function Register({ ctx }) {
     const [showPassword, setShowPassword] = useState(false)
     const [showConfirm, setShowConfirm] = useState(false)
 
+    useEffect(() => {
+        let mounted = true
+        getAuthConfig()
+            .then((config) => {
+                if (mounted) setAuthConfig({ ...defaultAuthConfig, ...config })
+            })
+            .catch(() => {
+                if (mounted) setAuthConfig(defaultAuthConfig)
+            })
+        return () => {
+            mounted = false
+        }
+    }, [])
+
+    const parseJwt = (token) => {
+        try {
+            const base64Payload = token.split('.')[1]
+            const jsonPayload = atob(base64Payload)
+            return JSON.parse(jsonPayload)
+        } catch {
+            return null
+        }
+    }
+
+    const updateField = (field, value) => {
+        setForm((current) => ({ ...current, [field]: value }))
+        if (error) setError('')
+        if (success) setSuccess('')
+    }
+
+    const validateForm = () => {
+        const email = form.email.trim()
+        const fullName = form.fullName.trim()
+        if (!fullName || fullName.length < 2) return 'Vui lòng nhập họ tên tối thiểu 2 ký tự.'
+        if (!email) return 'Vui lòng nhập email.'
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Email không hợp lệ.'
+        if (!form.password) return 'Vui lòng nhập mật khẩu.'
+        if (form.password.length < 8) return 'Mật khẩu cần tối thiểu 8 ký tự.'
+        if (!/[A-Z]/.test(form.password)) return 'Mật khẩu cần có ít nhất 1 chữ hoa.'
+        if (!/[a-z]/.test(form.password)) return 'Mật khẩu cần có ít nhất 1 chữ thường.'
+        if (!/\d/.test(form.password)) return 'Mật khẩu cần có ít nhất 1 chữ số.'
+        if (form.password !== form.confirm) return 'Mật khẩu nhập lại không khớp.'
+        if (!acceptedTerms) return 'Vui lòng đồng ý với điều khoản sử dụng và chính sách riêng tư.'
+        return ''
+    }
+
     const onSubmit = (e) => {
         e.preventDefault()
         setError('')
-        if (!acceptedTerms) {
-            setError('Vui lòng đồng ý với điều khoản sử dụng và chính sách riêng tư.')
+        setSuccess('')
+
+        const validationError = validateForm()
+        if (validationError) {
+            setError(validationError)
             return
         }
-        if (form.password !== form.confirm) {
-            setError('Mật khẩu không khớp.')
-            return
-        }
+
+        const email = form.email.trim()
         setLoading(true)
-        registerApi(form.email, form.password, form.fullName.trim())
-            .then(() => {
+        registerApi(email, form.password, form.fullName.trim())
+            .then((data) => {
+                if (authConfig.registration_auto_active && data?.access_token) {
+                    const payload = parseJwt(data.access_token)
+                    const nextUser =
+                        normalizeUser(data.user, email) || {
+                            id: payload?.sub || 'unknown',
+                            name: email.split('@')[0] || 'User',
+                            email,
+                            role: 'user',
+                        }
+                    ctx.setToken(data.access_token)
+                    ctx.setUser(nextUser)
+                    setSuccess('Đăng ký thành công. Đang mở trang web...')
+                    window.setTimeout(() => navigate(userRedirect, { replace: true }), 350)
+                    return
+                }
                 setSuccess('Đăng ký thành công. Vui lòng kiểm tra email để xác thực trước khi đăng nhập.')
             })
-            .catch((err) => setError(err.message || 'Đăng ký thất bại'))
+            .catch((err) => setError(err.message || 'Đăng ký thất bại. Vui lòng thử lại.'))
             .finally(() => setLoading(false))
     }
 
@@ -73,10 +143,16 @@ function Register({ ctx }) {
         <div className="auth">
             <div className="auth-card">
                 <p className="muted">Tạo tài khoản</p>
-                <h2>Bảo mật ưu tiên</h2>
-                <p className="muted small">Policy: tối thiểu 8 ký tự, có HOA/thường/số/ký hiệu.</p>
-                <p className="muted small">Sau khi đăng ký, bạn sẽ nhận email xác thực và cần xác thực trước khi đăng nhập.</p>
-                <form onSubmit={onSubmit} className="stack">
+                <h2>VPN Gaming Portal</h2>
+                <p className="muted small">Mật khẩu tối thiểu 8 ký tự, có chữ hoa, chữ thường và số.</p>
+                {authConfig.email_verification_required ? (
+                    <p className="muted small">
+                        Sau khi đăng ký, bạn sẽ nhận email xác thực và cần xác thực trước khi đăng nhập.
+                    </p>
+                ) : (
+                    <p className="muted small">Tài khoản mới sẽ được kích hoạt ngay sau khi đăng ký.</p>
+                )}
+                <form onSubmit={onSubmit} className="stack" noValidate>
                     <label className="field">
                         <span>Họ và tên</span>
                         <div className="auth-input-field">
@@ -85,9 +161,8 @@ function Register({ ctx }) {
                                 type="text"
                                 placeholder="Nguyễn Văn A"
                                 value={form.fullName}
-                                onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-                                minLength={2}
-                                required
+                                onChange={(e) => updateField('fullName', e.target.value)}
+                                autoComplete="name"
                             />
                         </div>
                     </label>
@@ -99,8 +174,8 @@ function Register({ ctx }) {
                                 type="email"
                                 placeholder="you@example.com"
                                 value={form.email}
-                                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                                required
+                                onChange={(e) => updateField('email', e.target.value)}
+                                autoComplete="email"
                             />
                         </div>
                     </label>
@@ -112,9 +187,8 @@ function Register({ ctx }) {
                                 type={showPassword ? 'text' : 'password'}
                                 placeholder="••••••••"
                                 value={form.password}
-                                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                                minLength={8}
-                                required
+                                onChange={(e) => updateField('password', e.target.value)}
+                                autoComplete="new-password"
                             />
                             <button
                                 type="button"
@@ -135,9 +209,8 @@ function Register({ ctx }) {
                                 type={showConfirm ? 'text' : 'password'}
                                 placeholder="••••••••"
                                 value={form.confirm}
-                                onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-                                minLength={8}
-                                required
+                                onChange={(e) => updateField('confirm', e.target.value)}
+                                autoComplete="new-password"
                             />
                             <button
                                 type="button"
@@ -154,7 +227,10 @@ function Register({ ctx }) {
                         <input
                             type="checkbox"
                             checked={acceptedTerms}
-                            onChange={(event) => setAcceptedTerms(event.target.checked)}
+                            onChange={(event) => {
+                                setAcceptedTerms(event.target.checked)
+                                if (error) setError('')
+                            }}
                         />
                         <span>
                             Tôi đồng ý với <Link to="/support#terms">Điều khoản sử dụng</Link> và{' '}
@@ -166,10 +242,14 @@ function Register({ ctx }) {
                     <button className="btn primary" type="submit" disabled={loading || !acceptedTerms}>
                         {loading ? 'Đang đăng ký...' : 'Đăng ký'}
                     </button>
-                    <div className="auth-divider"><span>Hoặc</span></div>
-                    <button className="btn ghost" type="button" onClick={onGoogle} disabled={loadingGoogle || !acceptedTerms}>
-                        {loadingGoogle ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}
-                    </button>
+                    {authConfig.google_oauth_enabled ? (
+                        <>
+                            <div className="auth-divider"><span>Hoặc</span></div>
+                            <button className="btn ghost" type="button" onClick={onGoogle} disabled={loadingGoogle || !acceptedTerms}>
+                                {loadingGoogle ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}
+                            </button>
+                        </>
+                    ) : null}
                     <div className="auth-link-line">
                         <span className="muted">Đã có tài khoản?</span>
                         <Link to={buildLoginRedirect(userRedirect)}>Đăng nhập</Link>
