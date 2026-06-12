@@ -41,6 +41,7 @@
 - Behavior:
   - SMTP configured: account is pending until email verification.
   - SMTP missing: account is active immediately for free/demo deploy.
+  - Existing pending accounts are auto-activated on successful login while SMTP is missing.
 - Errors:
   - 409 email existed
   - 400 validation

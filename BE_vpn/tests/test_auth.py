@@ -111,6 +111,35 @@ def test_login_locks_user_after_configured_failures(auth_service: AuthService, m
     assert user.locked_until is not None
 
 
+def test_login_auto_activates_pending_user_when_smtp_is_not_configured(
+    auth_service: AuthService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = SimpleNamespace(
+        id=uuid4(),
+        email="pending@example.com",
+        display_name="Pending",
+        role="user",
+        balance=0,
+        status="pending",
+        credential=SimpleNamespace(password_hash="hashed"),
+        failed_login_attempts=0,
+        locked_until=None,
+        last_failed_login_at=None,
+    )
+    auth_service.repo.get_user_by_email.return_value = user
+    monkeypatch.setattr(security, "verify_password", lambda plain, hashed: True)
+    monkeypatch.setattr(security, "create_access_token", lambda sub: "token-pending")
+
+    payload = schemas.LoginRequest(email="pending@example.com", password="Secret123")
+    response = auth_service.login(payload)
+
+    assert user.status == "active"
+    assert response.access_token == "token-pending"
+    auth_service.repo.db.add.assert_called_with(user)
+    auth_service.repo.commit.assert_called()
+
+
 def test_get_current_user_rejects_revoked_token(auth_service: AuthService, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth_service, "get_token_payload", lambda token: {"sub": str(uuid4())})
     auth_service.repo.get_revoked_token.return_value = object()

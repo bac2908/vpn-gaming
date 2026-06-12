@@ -92,6 +92,7 @@ Mặc định bản Render Free không cấu hình SMTP và Google OAuth. Ứng 
 - Ẩn nút **Tiếp tục với Google** nếu chưa có `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
 - Ẩn **Quên mật khẩu?** nếu chưa có SMTP thật.
 - Tự kích hoạt tài khoản mới sau khi đăng ký nếu chưa có SMTP, để demo/deploy free dùng được ngay.
+- Tài khoản đã lỡ ở trạng thái pending trước đó sẽ được kích hoạt khi đăng nhập đúng mật khẩu nếu chưa có SMTP.
 
 Nếu muốn bật xác thực email và quên mật khẩu, vào service `vpn-gaming` -> **Environment** và thêm:
 

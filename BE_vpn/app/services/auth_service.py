@@ -232,6 +232,19 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sai thong tin dang nhap")
 
         if user.status != "active":
+            if user.status == "pending" and not self._smtp_configured():
+                user.status = "active"
+                self.repo.db.add(user)
+                self.repo.commit()
+                self.repo.refresh(user)
+                self.logger.warning(
+                    "SMTP chua cau hinh; tai khoan pending %s duoc kich hoat khi dang nhap.",
+                    user.email,
+                )
+            else:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tai khoan chua xac thuc email")
+
+        if user.status != "active":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tai khoan chua xac thuc email")
 
         self._record_successful_login(user)
