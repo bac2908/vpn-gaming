@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { login as loginApi, normalizeUser } from '../../api/auth'
 import { googleLogin } from '../../api/oauth'
@@ -14,6 +15,7 @@ function Login({ ctx }) {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [loadingGoogle, setLoadingGoogle] = useState(false)
+    const [showPassword, setShowPassword] = useState(false)
 
     const parseJwt = (token) => {
         try {
@@ -93,46 +95,63 @@ function Login({ ctx }) {
                 <p className="muted">Đăng nhập an toàn</p>
                 <h2>VPN Gaming Portal</h2>
                 <p className="muted small">
-                    Tuân thủ OWASP: rate-limit giả lập, khóa tạm khi login sai, CSRF token
-                    (placeholder), password policy.
+                    Bảo vệ đăng nhập bằng rate-limit, khóa tạm khi sai nhiều lần và chính sách mật khẩu.
                 </p>
                 <form onSubmit={onSubmit} className="stack">
                     <label className="field">
                         <span>Email</span>
-                        <input
-                            type="email"
-                            placeholder="you@example.com"
-                            value={form.email}
-                            onChange={(e) => setForm({ ...form, email: e.target.value })}
-                            required
-                        />
+                        <div className="auth-input-field">
+                            <Mail className="auth-input-icon" aria-hidden="true" />
+                            <input
+                                type="email"
+                                placeholder="you@example.com"
+                                value={form.email}
+                                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                required
+                            />
+                        </div>
                     </label>
                     <label className="field">
                         <span>Mật khẩu</span>
-                        <input
-                            type="password"
-                            placeholder="••••••••"
-                            value={form.password}
-                            onChange={(e) => setForm({ ...form, password: e.target.value })}
-                            minLength={8}
-                            required
-                        />
+                        <div className="auth-input-field auth-password-field">
+                            <LockKeyhole className="auth-input-icon" aria-hidden="true" />
+                            <input
+                                type={showPassword ? 'text' : 'password'}
+                                placeholder="••••••••"
+                                value={form.password}
+                                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                                minLength={8}
+                                required
+                            />
+                            <button
+                                type="button"
+                                className="auth-password-toggle"
+                                onClick={() => setShowPassword((value) => !value)}
+                                title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                            >
+                                {showPassword ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                            </button>
+                        </div>
                         <small className="muted">Tối thiểu 8 ký tự, có chữ hoa/thường/số/ký hiệu.</small>
                     </label>
+                    <div className="auth-form-options">
+                        <span className="muted small">Lưu phiên trên thiết bị này.</span>
+                        <Link to="/forgot" className="muted">
+                            Quên mật khẩu?
+                        </Link>
+                    </div>
                     {error && <div className="alert error">{error}</div>}
                     <button className="btn primary" type="submit" disabled={loading}>
                         {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
                     </button>
+                    <div className="auth-divider"><span>Hoặc</span></div>
                     <button className="btn ghost" type="button" onClick={onGoogle} disabled={loadingGoogle}>
-                        {loadingGoogle ? 'Đang mở Google...' : 'Đăng nhập với Google'}
+                        {loadingGoogle ? 'Đang chuyển tới Google...' : 'Tiếp tục với Google'}
                     </button>
-                    <div className="row-between small">
-                        <Link to={buildRegisterRedirect(userRedirect)} className="muted">
-                            Đăng ký
-                        </Link>
-                        <Link to="/forgot" className="muted">
-                            Quên mật khẩu
-                        </Link>
+                    <div className="auth-link-line">
+                        <span className="muted">Chưa có tài khoản?</span>
+                        <Link to={buildRegisterRedirect(userRedirect)}>Đăng ký ngay</Link>
                     </div>
                 </form>
             </div>

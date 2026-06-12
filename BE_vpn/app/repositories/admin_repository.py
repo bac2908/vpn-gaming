@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -10,6 +10,8 @@ from app import models
 class AdminRepository:
     def __init__(self, db: Session):
         self.db = db
+
+    ADMIN_ADJUSTMENT_PROVIDERS = ("admin", "admin_debit")
 
     def list_users(
         self,
@@ -151,30 +153,26 @@ class AdminRepository:
         )
 
         total_revenue = (
-            self.db.query(func.sum(models.TopupTransaction.amount))
-            .filter(models.TopupTransaction.status == "succeeded")
+            self._successful_revenue_query(self.db.query(models.TopupTransaction))
+            .with_entities(func.sum(models.TopupTransaction.amount))
             .scalar()
             or 0
         )
 
         today = datetime.utcnow().date()
         today_revenue = (
-            self.db.query(func.sum(models.TopupTransaction.amount))
-            .filter(
-                models.TopupTransaction.status == "succeeded",
-                func.date(models.TopupTransaction.created_at) == today,
-            )
+            self._successful_revenue_query(self.db.query(models.TopupTransaction))
+            .filter(func.date(models.TopupTransaction.created_at) == today)
+            .with_entities(func.sum(models.TopupTransaction.amount))
             .scalar()
             or 0
         )
 
         first_day_of_month = today.replace(day=1)
         month_revenue = (
-            self.db.query(func.sum(models.TopupTransaction.amount))
-            .filter(
-                models.TopupTransaction.status == "succeeded",
-                models.TopupTransaction.created_at >= first_day_of_month,
-            )
+            self._successful_revenue_query(self.db.query(models.TopupTransaction))
+            .filter(models.TopupTransaction.created_at >= first_day_of_month)
+            .with_entities(func.sum(models.TopupTransaction.amount))
             .scalar()
             or 0
         )
@@ -244,6 +242,8 @@ class AdminRepository:
         status_filter: str | None,
         user_id: UUID | None,
         machine_id: UUID | None,
+        user_email: str | None = None,
+        machine_code: str | None = None,
     ) -> tuple[list[models.VpnSession], int]:
         query = self.db.query(models.VpnSession)
         if status_filter:
@@ -252,6 +252,12 @@ class AdminRepository:
             query = query.filter(models.VpnSession.user_id == user_id)
         if machine_id:
             query = query.filter(models.VpnSession.machine_id == machine_id)
+        if user_email:
+            query = query.join(models.User, models.VpnSession.user_id == models.User.id)
+            query = query.filter(models.User.email.ilike(f"%{user_email.strip()}%"))
+        if machine_code:
+            query = query.join(models.Machine, models.VpnSession.machine_id == models.Machine.id)
+            query = query.filter(models.Machine.code.ilike(f"%{machine_code.strip()}%"))
 
         total = query.count()
         items = (
@@ -282,22 +288,15 @@ class AdminRepository:
         page: int,
         page_size: int,
         user_id: UUID | None,
+        user_email: str | None,
         status: str | None,
         provider: str | None,
         date_from: datetime | None,
         date_to: datetime | None,
+        search: str | None = None,
     ) -> tuple[list[models.TopupTransaction], int]:
         query = self.db.query(models.TopupTransaction)
-        if user_id:
-            query = query.filter(models.TopupTransaction.user_id == user_id)
-        if status:
-            query = query.filter(models.TopupTransaction.status == status)
-        if provider:
-            query = query.filter(models.TopupTransaction.provider == provider)
-        if date_from:
-            query = query.filter(models.TopupTransaction.created_at >= date_from)
-        if date_to:
-            query = query.filter(models.TopupTransaction.created_at <= date_to)
+        query = self._filter_transactions(query, user_id, user_email, status, provider, date_from, date_to, search)
 
         total = query.count()
         items = (
@@ -310,22 +309,62 @@ class AdminRepository:
 
     def list_transactions_for_export(
         self,
+        user_id: UUID | None,
+        user_email: str | None,
         status: str | None,
         provider: str | None,
         date_from: datetime | None,
         date_to: datetime | None,
+        search: str | None = None,
     ) -> list[models.TopupTransaction]:
         query = self.db.query(models.TopupTransaction)
+        query = self._filter_transactions(query, user_id, user_email, status, provider, date_from, date_to, search)
+
+        return query.order_by(models.TopupTransaction.created_at.desc()).all()
+
+    def _filter_transactions(
+        self,
+        query,
+        user_id: UUID | None,
+        user_email: str | None,
+        status: str | None,
+        provider: str | None,
+        date_from: datetime | None,
+        date_to: datetime | None,
+        search: str | None,
+    ):
+        joined_user = False
+        if user_id:
+            query = query.filter(models.TopupTransaction.user_id == user_id)
+        if user_email:
+            query = query.join(models.User, models.TopupTransaction.user_id == models.User.id)
+            joined_user = True
+            query = query.filter(models.User.email.ilike(f"%{user_email.strip()}%"))
         if status:
             query = query.filter(models.TopupTransaction.status == status)
         if provider:
-            query = query.filter(models.TopupTransaction.provider == provider)
+            if provider == "admin_adjustment":
+                query = query.filter(models.TopupTransaction.provider.in_(self.ADMIN_ADJUSTMENT_PROVIDERS))
+            else:
+                query = query.filter(models.TopupTransaction.provider == provider)
         if date_from:
             query = query.filter(models.TopupTransaction.created_at >= date_from)
         if date_to:
             query = query.filter(models.TopupTransaction.created_at <= date_to)
 
-        return query.order_by(models.TopupTransaction.created_at.desc()).all()
+        search_term = (search or "").strip()
+        if search_term:
+            if not joined_user:
+                query = query.outerjoin(models.User, models.TopupTransaction.user_id == models.User.id)
+            like = f"%{search_term}%"
+            query = query.filter(
+                or_(
+                    models.User.email.ilike(like),
+                    models.TopupTransaction.description.ilike(like),
+                    models.TopupTransaction.trans_id.ilike(like),
+                )
+            )
+        return query
 
     def get_transaction_by_id(self, transaction_id: str) -> models.TopupTransaction | None:
         return self.db.query(models.TopupTransaction).filter(models.TopupTransaction.id == transaction_id).first()
@@ -341,19 +380,32 @@ class AdminRepository:
         if date_to:
             base_query = base_query.filter(models.TopupTransaction.created_at <= date_to)
 
-        succeeded = base_query.filter(models.TopupTransaction.status == "succeeded")
+        succeeded = self._successful_revenue_query(base_query)
         failed = base_query.filter(models.TopupTransaction.status == "failed")
+        admin_credit = base_query.filter(
+            models.TopupTransaction.status == "succeeded",
+            models.TopupTransaction.provider == "admin",
+        )
+        admin_debit = base_query.filter(
+            models.TopupTransaction.status == "succeeded",
+            models.TopupTransaction.provider == "admin_debit",
+        )
 
         total_revenue = succeeded.with_entities(func.sum(models.TopupTransaction.amount)).scalar() or 0
         total_success = succeeded.count()
         total_failed = failed.count()
+        admin_credit_total = admin_credit.with_entities(func.sum(models.TopupTransaction.amount)).scalar() or 0
+        admin_debit_total = admin_debit.with_entities(func.sum(models.TopupTransaction.amount)).scalar() or 0
 
         daily = (
             self.db.query(
                 func.date(models.TopupTransaction.created_at).label("date"),
                 func.sum(models.TopupTransaction.amount).label("amount"),
             )
-            .filter(models.TopupTransaction.status == "succeeded")
+            .filter(
+                models.TopupTransaction.status == "succeeded",
+                models.TopupTransaction.provider.notin_(self.ADMIN_ADJUSTMENT_PROVIDERS),
+            )
         )
         if date_from:
             daily = daily.filter(models.TopupTransaction.created_at >= date_from)
@@ -365,8 +417,16 @@ class AdminRepository:
             "total_revenue": total_revenue,
             "total_success": total_success,
             "total_failed": total_failed,
+            "admin_credit_total": admin_credit_total,
+            "admin_debit_total": admin_debit_total,
             "daily": [{"date": str(day[0]), "amount": day[1]} for day in daily],
         }
+
+    def _successful_revenue_query(self, query):
+        return query.filter(
+            models.TopupTransaction.status == "succeeded",
+            models.TopupTransaction.provider.notin_(self.ADMIN_ADJUSTMENT_PROVIDERS),
+        )
 
     def get_admin_settings(self) -> models.AdminSettings | None:
         return self.db.query(models.AdminSettings).order_by(models.AdminSettings.created_at.asc()).first()

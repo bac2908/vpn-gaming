@@ -17,6 +17,9 @@ from app.email_utils import send_email
 from app.repositories.auth_repository import AuthRepository
 
 
+_RATE_LIMIT_BUCKETS: dict[str, list[datetime]] = {}
+
+
 class AuthService:
     def __init__(self, db):
         self.repo = AuthRepository(db)
@@ -37,6 +40,96 @@ class AuthService:
     def build_auth_response(self, user: models.User) -> schemas.AuthResponse:
         token = security.create_access_token(str(user.id))
         return schemas.AuthResponse(access_token=token, user=self.to_user_out(user))
+
+    def _security_policy(self) -> dict:
+        policy = {
+            "password_min_length": 8,
+            "password_require_upper": True,
+            "password_require_lower": True,
+            "password_require_digit": True,
+            "lockout_max_attempts": 5,
+            "lockout_minutes": 10,
+        }
+        try:
+            settings = self.repo.db.query(models.AdminSettings).order_by(models.AdminSettings.created_at.asc()).first()
+        except Exception:
+            settings = None
+
+        if not settings:
+            return policy
+
+        for key, default_value in policy.items():
+            value = getattr(settings, key, None)
+            if isinstance(default_value, bool) and isinstance(value, bool):
+                policy[key] = value
+            elif isinstance(default_value, int) and isinstance(value, int):
+                policy[key] = value
+        return policy
+
+    def _check_rate_limit(self, action: str, identifier: str, max_attempts: int, window_seconds: int) -> None:
+        now = datetime.utcnow()
+        key = f"{action}:{identifier.strip().lower()}"
+        bucket = [
+            item for item in _RATE_LIMIT_BUCKETS.get(key, [])
+            if (now - item).total_seconds() < window_seconds
+        ]
+        if len(bucket) >= max_attempts:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Qua nhieu yeu cau. Vui long thu lai sau.",
+            )
+        bucket.append(now)
+        _RATE_LIMIT_BUCKETS[key] = bucket
+
+    def _validate_password_policy(self, password: str) -> None:
+        policy = self._security_policy()
+        min_length = int(policy["password_min_length"])
+        if len(password) < min_length:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Mat khau phai co it nhat {min_length} ky tu",
+            )
+        if policy["password_require_upper"] and not any(char.isupper() for char in password):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau phai co chu hoa")
+        if policy["password_require_lower"] and not any(char.islower() for char in password):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau phai co chu thuong")
+        if policy["password_require_digit"] and not any(char.isdigit() for char in password):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau phai co chu so")
+
+    def _locked_response(self, locked_until: datetime) -> None:
+        raise HTTPException(
+            status_code=423,
+            detail=f"Tai khoan bi khoa tam thoi den {locked_until.isoformat()}",
+        )
+
+    def _ensure_user_not_locked(self, user: models.User) -> None:
+        locked_until = getattr(user, "locked_until", None)
+        now = datetime.utcnow()
+        if locked_until and locked_until > now:
+            self._locked_response(locked_until)
+        if locked_until and locked_until <= now:
+            user.locked_until = None
+            user.failed_login_attempts = 0
+            self.repo.db.add(user)
+            self.repo.commit()
+
+    def _record_failed_login(self, user: models.User) -> None:
+        policy = self._security_policy()
+        attempts = int(getattr(user, "failed_login_attempts", 0) or 0) + 1
+        user.failed_login_attempts = attempts
+        user.last_failed_login_at = datetime.utcnow()
+        if attempts >= int(policy["lockout_max_attempts"]):
+            user.locked_until = datetime.utcnow() + timedelta(minutes=int(policy["lockout_minutes"]))
+        self.repo.db.add(user)
+        self.repo.commit()
+
+    def _record_successful_login(self, user: models.User) -> None:
+        if getattr(user, "failed_login_attempts", 0) or getattr(user, "locked_until", None):
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            user.last_failed_login_at = None
+            self.repo.db.add(user)
+            self.repo.commit()
 
     def build_sso_success_page(self, auth: schemas.AuthResponse) -> HTMLResponse:
         redirect_to = self.settings.app_base_url.rstrip("/") + "/app"
@@ -94,6 +187,7 @@ class AuthService:
         return user
 
     def login(self, payload: schemas.LoginRequest) -> schemas.AuthResponse:
+        self._check_rate_limit("login", payload.email, max_attempts=10, window_seconds=60)
         if len(payload.password) > 72:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau toi da 72 ky tu")
 
@@ -101,12 +195,18 @@ class AuthService:
         if not user or not user.credential:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sai thong tin dang nhap")
 
+        self._ensure_user_not_locked(user)
+
         if not security.verify_password(payload.password, user.credential.password_hash):
+            self._record_failed_login(user)
+            if getattr(user, "locked_until", None):
+                self._locked_response(user.locked_until)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sai thong tin dang nhap")
 
         if user.status != "active":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tai khoan chua xac thuc email")
 
+        self._record_successful_login(user)
         return self.build_auth_response(user)
 
     def logout(self, token: str) -> dict:
@@ -125,8 +225,10 @@ class AuthService:
         return {"message": "Dang xuat thanh cong"}
 
     def register(self, payload: schemas.RegisterRequest) -> schemas.AuthResponse:
+        self._check_rate_limit("register", payload.email, max_attempts=5, window_seconds=300)
         if len(payload.password) > 72:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau toi da 72 ky tu")
+        self._validate_password_policy(payload.password)
 
         existing = self.repo.get_user_by_email(payload.email)
         if existing:
@@ -170,6 +272,7 @@ class AuthService:
         return self.build_auth_response(user)
 
     def forgot_password(self, payload: schemas.ForgotPasswordRequest) -> dict:
+        self._check_rate_limit("forgot", payload.email, max_attempts=5, window_seconds=300)
         user = self.repo.get_user_by_email(payload.email)
         if not user:
             return {"message": "Neu email ton tai, chung toi da gui huong dan dat lai mat khau."}
@@ -209,10 +312,12 @@ class AuthService:
 
     def reset_password(self, payload: schemas.ResetPasswordRequest) -> dict:
         try:
+            self._check_rate_limit("reset", payload.token[:16] if payload.token else "missing", max_attempts=8, window_seconds=300)
             if not payload.token or not payload.new_password:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thieu thong tin dat lai mat khau")
             if len(payload.new_password) > 72:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau toi da 72 ky tu")
+            self._validate_password_policy(payload.new_password)
 
             token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
             record = self.repo.get_valid_password_reset(token_hash)
@@ -245,6 +350,7 @@ class AuthService:
             ) from exc
 
     def change_password(self, payload: schemas.ChangePasswordRequest) -> dict:
+        self._check_rate_limit("change-password", payload.email, max_attempts=8, window_seconds=300)
         user = self.repo.get_user_by_email(payload.email)
         if not user or not user.credential:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay nguoi dung")
@@ -254,6 +360,7 @@ class AuthService:
 
         if len(payload.new_password) > 72:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau toi da 72 ky tu")
+        self._validate_password_policy(payload.new_password)
 
         user.credential.password_hash = security.hash_password(payload.new_password)
         self.repo.db.add(user.credential)
@@ -266,6 +373,7 @@ class AuthService:
 
         if len(payload.new_password) > 72:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau toi da 72 ky tu")
+        self._validate_password_policy(payload.new_password)
 
         new_hash = security.hash_password(payload.new_password)
         self.repo.create_credential(user=user, password_hash=new_hash)

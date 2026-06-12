@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from math import ceil
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -485,7 +484,7 @@ class MachineService:
 
         billing_started_at = self._billing_start_naive(session) or bill_until
         elapsed_seconds = max(0, int((bill_until - billing_started_at).total_seconds()))
-        target_total_minutes = ceil(elapsed_seconds / 60) if elapsed_seconds > 0 else 0
+        target_total_minutes = elapsed_seconds // 60
         already_counted = int(session.charged_minutes or 0) + int(session.free_minutes_used or 0)
         minutes_to_bill = max(0, target_total_minutes - already_counted)
         if minutes_to_bill <= 0:

@@ -26,17 +26,17 @@ Backlog nay chi bat dau sau khi UX/UI va API contract da lock.
 ### 2) Security baseline
 - Strengthen role-based checks in admin endpoints.
 - Audit token revoke checks and expiry handling.
-- Add rate-limit hooks for auth sensitive routes.
+- Added basic rate-limit hooks, password policy enforcement, failed-login counter, and temporary lockout for auth sensitive routes.
 
 ## P1 - Should do
 
-### 4) Support ticket backend (for Support screen)
-- Create endpoints:
+### 4) Support ticket backend (for Support screen) - done
+- Added endpoints:
   - POST /support/tickets
   - GET /support/tickets/me
-- Optional admin endpoints:
   - GET /admin/support/tickets
   - PATCH /admin/support/tickets/{id}
+- Added frontend support form persistence and admin ticket management tab.
 
 ### 5) Session history endpoint for user History tab
 - Current UI session tab is placeholder.
@@ -44,8 +44,10 @@ Backlog nay chi bat dau sau khi UX/UI va API contract da lock.
   - GET /sessions/me?page=&page_size=&status=
 
 ### 6) Better admin transaction filtering
-- Optional enhancement:
-  - support user_email filter in /admin/transactions
+- Done:
+  - support user_email and search filters in /admin/transactions and /admin/transactions/export
+  - support admin_adjustment/admin_debit provider filters for manual balance adjustments
+  - exclude admin manual adjustments from revenue statistics so dashboard revenue reflects payment revenue
 
 ## P2 - Nice to have
 

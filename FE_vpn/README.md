@@ -99,6 +99,7 @@ Các route này yêu cầu user role `admin`.
 | `/admin-portal/machines` | `Admin` |
 | `/admin-portal/sessions` | `Admin` |
 | `/admin-portal/billing` | `Admin` |
+| `/admin-portal/support` | `Admin` |
 | `/admin-portal/settings` | `Admin` |
 
 ## Chạy local
@@ -131,6 +132,7 @@ Nếu `VITE_API_BASE_URL` rỗng, request sẽ gọi cùng origin. Trong dev, `v
 /machines
 /payments
 /subscriptions
+/support
 /admin
 /health
 ```
@@ -215,13 +217,15 @@ docker build -t vpn-gaming-frontend .
 /auth
 /machines
 /payments
+/subscriptions
+/support
 /admin
 /docs
 /openapi.json
 /api/health
 ```
 
-Frontend code có gọi `/subscriptions`. Nếu dùng frontend container riêng, cần thêm `location /subscriptions` proxy về backend hoặc dùng backend static serving thay cho frontend Nginx container.
+Frontend Nginx container đã proxy các API frontend đang gọi, gồm `/subscriptions` và `/support`, về backend.
 
 ## Các màn hình chính
 
@@ -231,8 +235,8 @@ Frontend code có gọi `/subscriptions`. Nếu dùng frontend container riêng,
 - `Wizard`: flow khởi tạo, tải `.ovpn`, check VPN, pair Sunshine/Moonlight, stop/snapshot.
 - `Subscriptions`: gói membership, pricing, purchase.
 - `History`: tổng quan phiên 7 ngày, timeline, export, lịch sử nạp tiền đã cộng ví.
-- `Support`: FAQ, hướng dẫn OpenVPN/Moonlight, trạng thái hệ thống.
-- `Admin`: users, machines, sessions, billing, settings.
+- `Support`: FAQ, hướng dẫn OpenVPN/Moonlight, gửi ticket hỗ trợ và xem trạng thái xử lý.
+- `Admin`: users, machines, sessions, billing, support tickets, settings.
 
 ## Payment UI rule
 

@@ -60,6 +60,38 @@ def _signed_momo_payload(service: PaymentService, result_code: int = 0, extra_da
     return payload
 
 
+def test_create_momo_payment_redirects_to_topup_result(payment_service: PaymentService, monkeypatch: pytest.MonkeyPatch) -> None:
+    tokens = iter(["order-token", "request-token"])
+    monkeypatch.setattr(payment_service_module.secrets, "token_hex", lambda _: next(tokens))
+
+    captured = {}
+
+    def fake_post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return SimpleNamespace(
+            status_code=200,
+            headers={"content-type": "application/json"},
+            json=lambda: {"resultCode": 0, "message": "OK", "payUrl": "https://momo.test/pay"},
+        )
+
+    monkeypatch.setattr(payment_service_module.httpx, "post", fake_post)
+    payment_service.repo.create_payment.return_value = SimpleNamespace(id=uuid4())
+
+    result = payment_service.create_momo_payment(
+        SimpleNamespace(amount=50000, description="Nap tien test"),
+        SimpleNamespace(id=uuid4()),
+    )
+
+    assert result.pay_url == "https://momo.test/pay"
+    assert captured["json"]["redirectUrl"].startswith("http://localhost:8000/app/topup/result?")
+    assert "orderId=order-token" in captured["json"]["redirectUrl"]
+    assert "requestId=request-token" in captured["json"]["redirectUrl"]
+    payment_service.repo.create_payment.assert_called_once()
+    payment_service.repo.commit.assert_called_once()
+
+
 def test_momo_ipn_creates_topup_only_after_success(payment_service: PaymentService) -> None:
     payment = SimpleNamespace(
         id=uuid4(),
@@ -130,3 +162,45 @@ def test_momo_ipn_updates_existing_pending_topup_for_old_orders(payment_service:
     )
     payment_service.repo.create_succeeded_topup_from_payment.assert_not_called()
     payment_service.repo.commit.assert_called_once()
+
+
+def test_momo_payment_status_returns_current_user_order(payment_service: PaymentService) -> None:
+    user_id = uuid4()
+    payment = SimpleNamespace(
+        id=uuid4(),
+        user_id=user_id,
+        order_id="order-123",
+        request_id="request-123",
+        amount=50000,
+        status="succeeded",
+        provider="momo",
+        message="Successful.",
+        trans_id="987654321",
+        created_at=None,
+    )
+    topup = SimpleNamespace(
+        status="succeeded",
+        balance_before=10000,
+        balance_after=60000,
+        completed_at=None,
+    )
+    payment_service.repo.get_payment_by_order_id.return_value = payment
+    payment_service.repo.get_topup_by_payment_id.return_value = topup
+
+    result = payment_service.get_momo_payment_status("order-123", SimpleNamespace(id=user_id))
+
+    assert result.order_id == "order-123"
+    assert result.status == "succeeded"
+    assert result.amount == 50000
+    assert result.balance_after == 60000
+    assert result.trans_id == "987654321"
+
+
+def test_momo_payment_status_rejects_other_user_order(payment_service: PaymentService) -> None:
+    payment = SimpleNamespace(id=uuid4(), user_id=uuid4())
+    payment_service.repo.get_payment_by_order_id.return_value = payment
+
+    with pytest.raises(Exception) as exc_info:
+        payment_service.get_momo_payment_status("order-123", SimpleNamespace(id=uuid4()))
+
+    assert getattr(exc_info.value, "status_code", None) == 404

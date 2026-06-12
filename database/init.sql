@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL DEFAULT 'user',
     status TEXT NOT NULL DEFAULT 'active',
     balance BIGINT NOT NULL DEFAULT 0,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+    last_failed_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_users_email UNIQUE (email),
     CONSTRAINT ck_users_role CHECK (role IN ('user', 'admin', 'moderator')),
@@ -74,6 +77,21 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_revoked_tokens_token_hash UNIQUE (token_hash)
+);
+
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    admin_note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at TIMESTAMPTZ,
+    CONSTRAINT ck_support_tickets_category CHECK (category IN ('payment', 'technical', 'account', 'other')),
+    CONSTRAINT ck_support_tickets_status CHECK (status IN ('open', 'in_progress', 'resolved', 'closed'))
 );
 
 -- =====================================================
@@ -284,6 +302,7 @@ CREATE TABLE IF NOT EXISTS admin_settings (
 -- =====================================================
 CREATE INDEX IF NOT EXISTS ix_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS ix_users_created_at ON users(created_at);
+CREATE INDEX IF NOT EXISTS ix_users_locked_until ON users(locked_until) WHERE locked_until IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS ix_identities_user_id ON identities(user_id);
 CREATE INDEX IF NOT EXISTS ix_identities_last_login_at ON identities(last_login_at);
@@ -295,6 +314,9 @@ CREATE INDEX IF NOT EXISTS ix_password_resets_user_id ON password_resets(user_id
 CREATE INDEX IF NOT EXISTS ix_password_resets_expires_at ON password_resets(expires_at);
 
 CREATE INDEX IF NOT EXISTS ix_revoked_tokens_expires_at ON revoked_tokens(expires_at);
+
+CREATE INDEX IF NOT EXISTS ix_support_tickets_user_status ON support_tickets(user_id, status);
+CREATE INDEX IF NOT EXISTS ix_support_tickets_status_created ON support_tickets(status, created_at);
 
 CREATE INDEX IF NOT EXISTS ix_machines_status ON machines(status);
 CREATE INDEX IF NOT EXISTS ix_machines_region_status ON machines(region, status);

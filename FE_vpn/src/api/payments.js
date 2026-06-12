@@ -15,6 +15,14 @@ export async function getBalance(token) {
     })
 }
 
+export async function getMomoPaymentStatus(orderId, token) {
+    const params = new URLSearchParams({ order_id: orderId })
+    return request(`/payments/momo/status?${params.toString()}`, {
+        method: 'GET',
+        token,
+    })
+}
+
 export async function getTopupHistory({ page = 1, pageSize = 10, status } = {}, token) {
     const params = new URLSearchParams({ page, page_size: pageSize })
     if (status) params.append('status', status)

@@ -19,6 +19,8 @@ import {
     adminTopupUser,
     getAdminSettings,
     updateAdminSettings,
+    listSupportTickets,
+    updateSupportTicket,
 } from '../api/admin'
 import './admin.css'
 import {
@@ -655,6 +657,7 @@ const NAV_ITEMS = [
     { key: 'Machines', slug: 'machines', label: 'Máy chủ', icon: '🖥️' },
     { key: 'Sessions', slug: 'sessions', label: 'Phiên kết nối', icon: '🎮' },
     { key: 'Billing', slug: 'billing', label: 'Hóa đơn', icon: '💰' },
+    { key: 'Support', slug: 'support', label: 'Hỗ trợ', icon: '🛠️' },
     { key: 'Settings', slug: 'settings', label: 'Cấu hình', icon: '⚙️' },
 ]
 
@@ -665,6 +668,24 @@ const isUserActive = (user) => user?.status === 'active'
 const userStatusLabel = (status) => status === 'active' ? 'Hoạt động' : 'Không hoạt động'
 const userStatusClass = (status) => status === 'active' ? 'success' : 'error'
 const userRoleLabel = (role) => role === 'admin' ? 'Admin' : 'User'
+const SUPPORT_TYPE_LABELS = {
+    payment: 'Thanh toán',
+    technical: 'Kỹ thuật',
+    account: 'Tài khoản',
+    other: 'Khác',
+}
+const SUPPORT_STATUS_LABELS = {
+    open: 'Mới',
+    in_progress: 'Đang xử lý',
+    resolved: 'Đã xử lý',
+    closed: 'Đã đóng',
+}
+const supportStatusClass = (status) => {
+    if (status === 'resolved') return 'success'
+    if (status === 'closed') return 'ghost'
+    if (status === 'in_progress') return 'warning'
+    return 'info'
+}
 
 function Admin({ ctx }) {
     const token = ctx?.token
@@ -714,7 +735,7 @@ function Admin({ ctx }) {
     const [sessions, setSessions] = useState([])
     const [sessionError, setSessionError] = useState('')
     const [sessionLoading, setSessionLoading] = useState(false)
-    const [sessionFilters, setSessionFilters] = useState({ status: '', user_id: '', machine_id: '' })
+    const [sessionFilters, setSessionFilters] = useState({ status: '', user_id: '', user_email: '', machine_id: '', machine_code: '' })
 
     // Billing
     const [billingPage, setBillingPage] = useState(1)
@@ -723,7 +744,16 @@ function Admin({ ctx }) {
     const [billingTransactions, setBillingTransactions] = useState([])
     const [billingError, setBillingError] = useState('')
     const [billingLoading, setBillingLoading] = useState(false)
-    const [billingFilters, setBillingFilters] = useState({ status: '', provider: '', user_id: '', date_from: '', date_to: '' })
+    const [billingFilters, setBillingFilters] = useState({ status: '', provider: '', user_id: '', user_email: '', search: '', date_from: '', date_to: '' })
+
+    // Support
+    const [supportPage, setSupportPage] = useState(1)
+    const [supportPageSize, setSupportPageSize] = useState(10)
+    const [supportTotal, setSupportTotal] = useState(0)
+    const [supportTickets, setSupportTickets] = useState([])
+    const [supportError, setSupportError] = useState('')
+    const [supportLoading, setSupportLoading] = useState(false)
+    const [supportFilters, setSupportFilters] = useState({ status: '', type: '', user_id: '', user_email: '', search: '' })
 
     // Settings
     const [settingsForm, setSettingsForm] = useState({
@@ -764,6 +794,7 @@ function Admin({ ctx }) {
     const machineTotalPages = Math.max(1, Math.ceil(machineTotal / machinePageSize))
     const sessionTotalPages = Math.max(1, Math.ceil(sessionTotal / sessionPageSize))
     const billingTotalPages = Math.max(1, Math.ceil(billingTotal / billingPageSize))
+    const supportTotalPages = Math.max(1, Math.ceil(supportTotal / supportPageSize))
     const userStart = userTotal ? ((userPage - 1) * userPageSize) + 1 : 0
     const userEnd = Math.min(userPage * userPageSize, userTotal)
     const sortedUsers = useMemo(() => {
@@ -873,7 +904,9 @@ function Admin({ ctx }) {
                 page_size: sessionPageSize,
                 status: sessionFilters.status,
                 user_id: sessionFilters.user_id,
+                user_email: sessionFilters.user_email,
                 machine_id: sessionFilters.machine_id,
+                machine_code: sessionFilters.machine_code,
             }, token)
             setSessions(data.items || [])
             setSessionTotal(data.total || 0)
@@ -892,6 +925,8 @@ function Admin({ ctx }) {
             const params = {
                 page: billingPage, page_size: billingPageSize,
                 user_id: billingFilters.user_id || undefined,
+                user_email: billingFilters.user_email || undefined,
+                search: billingFilters.search || undefined,
                 status: billingFilters.status,
                 provider: billingFilters.provider,
                 date_from: billingFilters.date_from ? new Date(billingFilters.date_from).toISOString() : undefined,
@@ -906,6 +941,29 @@ function Admin({ ctx }) {
             setBillingLoading(false)
         }
     }, [billingPage, billingPageSize, billingFilters, token, isAdmin])
+
+    const loadSupportTickets = useCallback(async () => {
+        if (!isAdmin) return
+        setSupportLoading(true)
+        setSupportError('')
+        try {
+            const data = await listSupportTickets({
+                page: supportPage,
+                page_size: supportPageSize,
+                status: supportFilters.status,
+                type: supportFilters.type,
+                user_id: supportFilters.user_id,
+                user_email: supportFilters.user_email,
+                search: supportFilters.search,
+            }, token)
+            setSupportTickets(data.items || [])
+            setSupportTotal(data.total || 0)
+        } catch (err) {
+            setSupportError(err.message || 'Không tải được ticket hỗ trợ')
+        } finally {
+            setSupportLoading(false)
+        }
+    }, [supportPage, supportPageSize, supportFilters, token, isAdmin])
 
     /* ---- Effects ---- */
     useEffect(() => {
@@ -936,6 +994,38 @@ function Admin({ ctx }) {
         loadBilling()
         loadRevenueStats()
     }, [activeTab, loadBilling, loadRevenueStats])
+
+    useEffect(() => {
+        if (activeTab !== 'Support') return
+        loadSupportTickets()
+    }, [activeTab, loadSupportTickets])
+
+    useEffect(() => {
+        if (!isAdmin || !['Overview', 'Sessions', 'Billing', 'Support'].includes(activeTab)) return
+        const intervalId = window.setInterval(() => {
+            if (activeTab === 'Overview') {
+                loadDashboard()
+                loadRevenueStats()
+                loadMachineStats()
+            }
+            if (activeTab === 'Sessions') loadSessions()
+            if (activeTab === 'Billing') {
+                loadBilling()
+                loadRevenueStats()
+            }
+            if (activeTab === 'Support') loadSupportTickets()
+        }, 30000)
+        return () => window.clearInterval(intervalId)
+    }, [
+        activeTab,
+        isAdmin,
+        loadBilling,
+        loadDashboard,
+        loadMachineStats,
+        loadRevenueStats,
+        loadSessions,
+        loadSupportTickets,
+    ])
 
     /* ---- Handlers ---- */
     const handleLogout = () => ctx?.logout?.()
@@ -1048,6 +1138,18 @@ function Admin({ ctx }) {
         await adminTopupUser(userId, Math.round(amount), description, token)
         loadUsers(); loadBilling(); loadDashboard()
         showToast(`${amount < 0 ? 'Đã trừ' : 'Đã nạp'} ${formatMoney(Math.abs(amount))} thành công!`)
+    }
+
+    const handleSupportTicketUpdate = async (ticketId, payload) => {
+        try {
+            setSupportError('')
+            await updateSupportTicket(ticketId, payload, token)
+            await loadSupportTickets()
+            showToast('Đã cập nhật ticket hỗ trợ')
+        } catch (err) {
+            setSupportError(err.message || 'Không cập nhật được ticket hỗ trợ')
+            showToast('Không cập nhật được ticket hỗ trợ', 'error')
+        }
     }
 
     const openTransactionDetail = async (transaction) => {
@@ -1163,6 +1265,9 @@ function Admin({ ctx }) {
             const blob = await exportTransactionsCSVApi({
                 status: billingFilters.status,
                 provider: billingFilters.provider,
+                user_id: billingFilters.user_id || undefined,
+                user_email: billingFilters.user_email || undefined,
+                search: billingFilters.search || undefined,
                 date_from: billingFilters.date_from ? new Date(billingFilters.date_from).toISOString() : undefined,
                 date_to: billingFilters.date_to ? new Date(billingFilters.date_to).toISOString() : undefined,
             }, token)
@@ -1210,6 +1315,10 @@ function Admin({ ctx }) {
         if (activeTab === 'Billing') {
             loadBilling()
             loadRevenueStats()
+            return
+        }
+        if (activeTab === 'Support') {
+            loadSupportTickets()
         }
     }
 
@@ -1671,10 +1780,10 @@ function Admin({ ctx }) {
                                     <option value="ended">Ended</option>
                                     <option value="failed">Failed</option>
                                 </select>
-                                <input className="input-inline" placeholder="User ID" value={sessionFilters.user_id}
-                                    onChange={e => { setSessionFilters(p => ({ ...p, user_id: e.target.value })); setSessionPage(1) }} />
-                                <input className="input-inline" placeholder="Machine ID" value={sessionFilters.machine_id}
-                                    onChange={e => { setSessionFilters(p => ({ ...p, machine_id: e.target.value })); setSessionPage(1) }} />
+                                <input className="input-inline" placeholder="Email user" value={sessionFilters.user_email}
+                                    onChange={e => { setSessionFilters(p => ({ ...p, user_email: e.target.value, user_id: '' })); setSessionPage(1) }} />
+                                <input className="input-inline" placeholder="Mã máy" value={sessionFilters.machine_code}
+                                    onChange={e => { setSessionFilters(p => ({ ...p, machine_code: e.target.value, machine_id: '' })); setSessionPage(1) }} />
                             </div>
                         </div>
                         <div className="table">
@@ -1732,10 +1841,11 @@ function Admin({ ctx }) {
                 {/* ===== BILLING TAB ===== */}
                 {activeTab === 'Billing' && (
                     <>
-                        <section className="grid grid-3">
-                            <div className="card border kpi-card"><span className="kpi-icon">💵</span><p className="muted">Tổng doanh thu</p><h3 className="text-success">{formatMoney(revenueStats?.total_revenue)}</h3></div>
+                        <section className="grid grid-4">
+                            <div className="card border kpi-card"><span className="kpi-icon">💵</span><p className="muted">Doanh thu thanh toán</p><h3 className="text-success">{formatMoney(revenueStats?.total_revenue)}</h3></div>
                             <div className="card border kpi-card"><span className="kpi-icon">✅</span><p className="muted">GD thành công</p><h3>{revenueStats?.total_success || 0}</h3></div>
                             <div className="card border kpi-card"><span className="kpi-icon">❌</span><p className="muted">GD thất bại</p><h3 className="text-danger">{revenueStats?.total_failed || 0}</h3></div>
+                            <div className="card border kpi-card"><span className="kpi-icon">⚖️</span><p className="muted">Admin điều chỉnh</p><h3>{formatMoney((revenueStats?.admin_credit_total || 0) - (revenueStats?.admin_debit_total || 0))}</h3></div>
                         </section>
 
                         <section className="card">
@@ -1777,8 +1887,10 @@ function Admin({ ctx }) {
                                 <button className="btn secondary" onClick={exportTransactionsCSV}>📥 Xuất CSV</button>
                             </div>
                             <div className="filter-row">
-                                <input className="input-inline" placeholder="User ID (UUID)" value={billingFilters.user_id}
-                                    onChange={e => { setBillingFilters(f => ({ ...f, user_id: e.target.value })); setBillingPage(1) }} />
+                                <input className="input-inline" placeholder="Email user" value={billingFilters.user_email}
+                                    onChange={e => { setBillingFilters(f => ({ ...f, user_email: e.target.value, user_id: '' })); setBillingPage(1) }} />
+                                <input className="input-inline" placeholder="Tìm mô tả / mã GD" value={billingFilters.search}
+                                    onChange={e => { setBillingFilters(f => ({ ...f, search: e.target.value })); setBillingPage(1) }} />
                                 <select className="input-inline" value={billingFilters.status}
                                     onChange={e => { setBillingFilters(f => ({ ...f, status: e.target.value })); setBillingPage(1) }}>
                                     <option value="">Tất cả trạng thái</option>
@@ -1790,7 +1902,9 @@ function Admin({ ctx }) {
                                     onChange={e => { setBillingFilters(f => ({ ...f, provider: e.target.value })); setBillingPage(1) }}>
                                     <option value="">Tất cả phương thức</option>
                                     <option value="momo">MoMo</option>
-                                    <option value="admin">Admin</option>
+                                    <option value="admin_adjustment">Admin điều chỉnh</option>
+                                    <option value="admin">Admin nạp</option>
+                                    <option value="admin_debit">Admin trừ</option>
                                     <option value="bank">Ngân hàng</option>
                                 </select>
                                 <input className="input-inline" type="date" value={billingFilters.date_from}
@@ -1833,6 +1947,85 @@ function Admin({ ctx }) {
                             </div>
                         </section>
                     </>
+                )}
+
+                {/* ===== SUPPORT TAB ===== */}
+                {activeTab === 'Support' && (
+                    <section className="card">
+                        <div className="section-head">
+                            <div>
+                                <p className="muted">Support</p>
+                                <h3>Quản lý yêu cầu hỗ trợ</h3>
+                            </div>
+                            <button className="btn secondary" onClick={loadSupportTickets} disabled={supportLoading}>Làm mới</button>
+                        </div>
+                        <div className="filter-row">
+                            <select className="input-inline" value={supportFilters.status}
+                                onChange={e => { setSupportFilters(f => ({ ...f, status: e.target.value })); setSupportPage(1) }}>
+                                <option value="">Tất cả trạng thái</option>
+                                <option value="open">Mới</option>
+                                <option value="in_progress">Đang xử lý</option>
+                                <option value="resolved">Đã xử lý</option>
+                                <option value="closed">Đã đóng</option>
+                            </select>
+                            <select className="input-inline" value={supportFilters.type}
+                                onChange={e => { setSupportFilters(f => ({ ...f, type: e.target.value })); setSupportPage(1) }}>
+                                <option value="">Tất cả loại</option>
+                                <option value="payment">Thanh toán</option>
+                                <option value="technical">Kỹ thuật</option>
+                                <option value="account">Tài khoản</option>
+                                <option value="other">Khác</option>
+                            </select>
+                            <input className="input-inline" placeholder="Email user" value={supportFilters.user_email}
+                                onChange={e => { setSupportFilters(f => ({ ...f, user_email: e.target.value, user_id: '' })); setSupportPage(1) }} />
+                            <input className="input-inline" placeholder="Tìm tiêu đề / nội dung" value={supportFilters.search}
+                                onChange={e => { setSupportFilters(f => ({ ...f, search: e.target.value })); setSupportPage(1) }} />
+                        </div>
+                        <div className="table">
+                            <div className="row head admin-support-row">
+                                <span>User</span><span>Loại</span><span>Nội dung</span><span>Trạng thái</span><span>Tạo lúc</span><span>Xử lý</span>
+                            </div>
+                            {supportLoading
+                                ? <SkeletonRows rowClass="admin-support-row" cols={6} count={supportPageSize} />
+                                : supportTickets.length === 0
+                                    ? <div className="row"><span style={{ color: '#5c6578', gridColumn: 'span 6' }}>Không có yêu cầu hỗ trợ</span></div>
+                                    : supportTickets.map(ticket => (
+                                        <div key={ticket.id} className="row admin-support-row">
+                                            <span className="truncate" style={{ fontSize: '0.82rem' }}>{ticket.user_email || `${ticket.user_id?.slice(0, 8)}...`}</span>
+                                            <span className="pill ghost">{SUPPORT_TYPE_LABELS[ticket.type] || ticket.type}</span>
+                                            <span className="support-ticket-cell">
+                                                <strong>{ticket.title}</strong>
+                                                <small>{ticket.detail}</small>
+                                                {ticket.admin_note && <small className="support-admin-note">Admin: {ticket.admin_note}</small>}
+                                            </span>
+                                            <span className={`pill ${supportStatusClass(ticket.status)}`}>{SUPPORT_STATUS_LABELS[ticket.status] || ticket.status}</span>
+                                            <span style={{ fontSize: '0.8rem', color: '#7a8499' }}>{ticket.created_at ? new Date(ticket.created_at).toLocaleString('vi-VN') : '-'}</span>
+                                            <span>
+                                                <select className="status-select" value={ticket.status}
+                                                    onChange={e => handleSupportTicketUpdate(ticket.id, { status: e.target.value })}
+                                                    disabled={supportLoading}>
+                                                    <option value="open">Mới</option>
+                                                    <option value="in_progress">Đang xử lý</option>
+                                                    <option value="resolved">Đã xử lý</option>
+                                                    <option value="closed">Đã đóng</option>
+                                                </select>
+                                            </span>
+                                        </div>
+                                    ))
+                            }
+                        </div>
+                        {supportError && <div className="alert error">⚠️ {supportError}</div>}
+                        <div className="admin-pagination">
+                            <div className="muted" style={{ fontSize: '0.83rem' }}>Trang {supportPage}/{supportTotalPages} · {supportTotal} ticket</div>
+                            <div className="actions">
+                                <select className="input-inline" value={supportPageSize} onChange={e => { setSupportPageSize(Number(e.target.value)); setSupportPage(1) }}>
+                                    <option value={10}>10/trang</option><option value={20}>20/trang</option><option value={50}>50/trang</option>
+                                </select>
+                                <button className="btn ghost" disabled={supportPage <= 1} onClick={() => setSupportPage(p => p - 1)}>← Trước</button>
+                                <button className="btn ghost" disabled={supportPage >= supportTotalPages} onClick={() => setSupportPage(p => p + 1)}>Sau →</button>
+                            </div>
+                        </div>
+                    </section>
                 )}
 
                 {/* ===== SETTINGS TAB ===== */}

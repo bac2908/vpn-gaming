@@ -1040,6 +1040,37 @@ select option {
     grid-template-columns: 1fr 1fr 1fr 1fr 0.75fr 0.75fr 1.2fr !important;
 }
 
+.admin-support-row {
+    grid-template-columns: minmax(180px, 1.05fr) minmax(105px, 0.62fr) minmax(320px, 2fr) minmax(105px, 0.72fr) minmax(150px, 0.9fr) minmax(130px, 0.8fr) !important;
+}
+
+.support-ticket-cell {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.support-ticket-cell strong {
+    color: #e9edf3;
+    font-size: 0.86rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.support-ticket-cell small {
+    color: #7a8499;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.support-ticket-cell .support-admin-note {
+    color: #3dd598;
+}
+
 /* ---- Status Select ---- */
 .status-select {
     padding: 5px 9px;
@@ -1951,6 +1982,7 @@ select option {
 }
 .shimmer-row.admin-session-row { grid-template-columns: 1.35fr 0.85fr 0.68fr 0.78fr 0.9fr 1.05fr 0.8fr 1.05fr 1.05fr; }
 .shimmer-row.admin-billing-row { grid-template-columns: 1fr 1fr 1fr 1fr 0.75fr 0.75fr 1.2fr; }
+.shimmer-row.admin-support-row { grid-template-columns: minmax(180px, 1.05fr) minmax(105px, 0.62fr) minmax(320px, 2fr) minmax(105px, 0.72fr) minmax(150px, 0.9fr) minmax(130px, 0.8fr); }
 .shimmer-row.simple { grid-template-columns: 2fr 1fr 1fr 1fr; }
 
 .shimmer-item {
@@ -2235,7 +2267,8 @@ select option {
 
     .table .row:not(.admin-user-row):not(.admin-machine-row-full),
     .admin-session-row,
-    .admin-billing-row {
+    .admin-billing-row,
+    .admin-support-row {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     }
 

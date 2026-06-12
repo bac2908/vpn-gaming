@@ -180,7 +180,7 @@ Các service chính:
 | `backend` | `vpn_backend` | `8080 -> 8000` | FastAPI |
 | `frontend` | `vpn_frontend` | `80` | Nginx + React build |
 
-Lưu ý: `FE_vpn/nginx.conf` hiện proxy `/auth`, `/machines`, `/payments`, `/admin`, `/docs`, `/openapi.json`, `/api/health`. Frontend code có gọi `/subscriptions`; nếu dùng frontend Nginx container riêng, cần bổ sung proxy `/subscriptions` hoặc dùng backend static serving.
+Lưu ý: `FE_vpn/nginx.conf` hiện proxy các API chính: `/auth`, `/machines`, `/payments`, `/subscriptions`, `/support`, `/admin`, `/docs`, `/openapi.json`, `/api/health`.
 
 ## Route frontend
 
@@ -200,6 +200,7 @@ Lưu ý: `FE_vpn/nginx.conf` hiện proxy `/auth`, `/machines`, `/payments`, `/a
 | `/admin-portal/machines` | Quản lý máy |
 | `/admin-portal/sessions` | Quản lý phiên |
 | `/admin-portal/billing` | Giao dịch/doanh thu |
+| `/admin-portal/support` | Quản lý yêu cầu hỗ trợ |
 | `/admin-portal/settings` | Cài đặt admin |
 
 ## API backend chính
@@ -244,6 +245,15 @@ POST   /machines/sessions/{session_id}/sunshine/pair
 GET    /subscriptions/plans
 GET    /subscriptions/me
 POST   /subscriptions/purchase
+```
+
+### Support
+
+```text
+POST   /support/tickets
+GET    /support/tickets/me
+GET    /admin/support/tickets
+PATCH  /admin/support/tickets/{ticket_id}
 ```
 
 ### Payments

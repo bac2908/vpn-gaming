@@ -9,6 +9,7 @@ from app import models, schemas
 from app.api.deps import require_admin
 from app.database import get_db
 from app.services.admin_service import AdminService
+from app.services.support_service import SupportService
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -16,6 +17,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def get_admin_service(db: Session = Depends(get_db)) -> AdminService:
     return AdminService(db)
+
+
+def get_support_service(db: Session = Depends(get_db)) -> SupportService:
+    return SupportService(db)
 
 
 @router.get("/users", response_model=schemas.UsersPage)
@@ -107,6 +112,32 @@ def admin_get_settings(
     return admin_service.get_settings()
 
 
+@router.get("/support/tickets", response_model=schemas.SupportTicketsPage)
+def admin_list_support_tickets(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status_filter: str | None = Query(None, alias="status"),
+    category: str | None = Query(None, alias="type"),
+    user_id: UUID | None = Query(None),
+    user_email: str | None = Query(None),
+    search: str | None = Query(None),
+    q: str | None = Query(None, alias="q"),
+    _: models.User = Depends(require_admin),
+    support_service: SupportService = Depends(get_support_service),
+):
+    return support_service.list_admin_tickets(page, page_size, status_filter, category, user_id, user_email, search or q)
+
+
+@router.patch("/support/tickets/{ticket_id}", response_model=schemas.SupportTicketOut)
+def admin_update_support_ticket(
+    ticket_id: UUID,
+    payload: schemas.SupportTicketUpdateRequest,
+    _: models.User = Depends(require_admin),
+    support_service: SupportService = Depends(get_support_service),
+):
+    return support_service.update_ticket(ticket_id, payload)
+
+
 @router.put("/settings", response_model=schemas.AdminSettingsOut)
 def admin_update_settings(
     payload: schemas.AdminSettingsUpdate,
@@ -132,10 +163,12 @@ def admin_list_sessions(
     status_filter: str | None = Query(None, alias="status"),
     user_id: UUID | None = Query(None),
     machine_id: UUID | None = Query(None),
+    user_email: str | None = Query(None),
+    machine_code: str | None = Query(None),
     _: models.User = Depends(require_admin),
     admin_service: AdminService = Depends(get_admin_service),
 ):
-    return admin_service.list_sessions(page, page_size, status_filter, user_id, machine_id)
+    return admin_service.list_sessions(page, page_size, status_filter, user_id, machine_id, user_email, machine_code)
 
 
 @router.post("/sessions/{session_id}/stop", response_model=schemas.MessageResponse)
@@ -159,14 +192,26 @@ def admin_fail_session(
 
 @router.get("/transactions/export", response_model=None)
 def admin_export_transactions_csv(
+    user_id: UUID | None = Query(None),
+    user_email: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     provider: str | None = Query(None),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
+    search: str | None = Query(None),
+    q: str | None = Query(None, alias="q"),
     _: models.User = Depends(require_admin),
     admin_service: AdminService = Depends(get_admin_service),
 ):
-    iter_csv = admin_service.export_transactions_csv(status_filter, provider, date_from, date_to)
+    iter_csv = admin_service.export_transactions_csv(
+        user_id,
+        user_email,
+        status_filter,
+        provider,
+        date_from,
+        date_to,
+        search or q,
+    )
     return StreamingResponse(
         iter_csv(),
         media_type="text/csv",
@@ -179,14 +224,27 @@ def admin_list_topup_transactions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user_id: UUID | None = Query(None),
+    user_email: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
     provider: str | None = Query(None),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
+    search: str | None = Query(None),
+    q: str | None = Query(None, alias="q"),
     _: models.User = Depends(require_admin),
     admin_service: AdminService = Depends(get_admin_service),
 ):
-    return admin_service.list_transactions(page, page_size, user_id, status_filter, provider, date_from, date_to)
+    return admin_service.list_transactions(
+        page,
+        page_size,
+        user_id,
+        user_email,
+        status_filter,
+        provider,
+        date_from,
+        date_to,
+        search or q,
+    )
 
 
 @router.get("/transactions/{transaction_id}", response_model=schemas.TopupTransactionOut)

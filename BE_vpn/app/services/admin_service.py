@@ -1,4 +1,3 @@
-import logging
 import csv
 import io
 import logging
@@ -26,7 +25,8 @@ class AdminService:
         if not hasattr(item, "user_id"):
             return item
         user = users_map.get(item.user_id) if users_map else None
-        amount = -(item.amount or 0) if item.provider == "admin_debit" else item.amount
+        provider = getattr(item, "provider", None)
+        amount = -(item.amount or 0) if provider == "admin_debit" else item.amount
         return schemas.TopupTransactionOut.from_orm(item).copy(
             update={"user_email": user.email if user else None, "amount": amount}
         )
@@ -201,8 +201,18 @@ class AdminService:
         status_filter: str | None,
         user_id: UUID | None,
         machine_id: UUID | None,
+        user_email: str | None = None,
+        machine_code: str | None = None,
     ) -> schemas.SessionsPage:
-        items, total = self.repo.list_sessions(page, page_size, status_filter, user_id, machine_id)
+        items, total = self.repo.list_sessions(
+            page,
+            page_size,
+            status_filter,
+            user_id,
+            machine_id,
+            user_email,
+            machine_code,
+        )
 
         user_ids = [item.user_id for item in items if item.user_id is not None]
         machine_ids = [item.machine_id for item in items if item.machine_id is not None]
@@ -252,32 +262,62 @@ class AdminService:
 
     def export_transactions_csv(
         self,
+        user_id: UUID | None,
+        user_email: str | None,
         status_filter: str | None,
         provider: str | None,
         date_from: datetime | None,
         date_to: datetime | None,
+        search: str | None = None,
     ):
-        items = self.repo.list_transactions_for_export(status_filter, provider, date_from, date_to)
+        items = self.repo.list_transactions_for_export(
+            user_id,
+            user_email,
+            status_filter,
+            provider,
+            date_from,
+            date_to,
+            search,
+        )
         users_map = self.repo.get_users_by_ids([item.user_id for item in items])
 
         def iter_csv():
             buffer = io.StringIO()
             writer = csv.writer(buffer)
-            header = ["UserEmail", "UserId", "Amount", "Provider", "Status", "CreatedAt", "Description"]
+            header = [
+                "TransactionId",
+                "UserEmail",
+                "UserId",
+                "Amount",
+                "BalanceBefore",
+                "BalanceAfter",
+                "Provider",
+                "Status",
+                "CreatedAt",
+                "CompletedAt",
+                "Description",
+                "TransId",
+            ]
             writer.writerow(header)
             yield buffer.getvalue()
             buffer.seek(0)
             buffer.truncate(0)
             for item in items:
                 user = users_map.get(item.user_id)
+                transaction = self._topup_out(item, users_map)
                 row = [
+                    str(item.id),
                     user.email if user else "",
                     str(item.user_id),
-                    str(item.amount),
+                    str(transaction.amount),
+                    str(item.balance_before),
+                    str(item.balance_after),
                     item.provider or "",
                     item.status or "",
                     item.created_at.strftime("%Y-%m-%d %H:%M:%S") if item.created_at else "",
+                    item.completed_at.strftime("%Y-%m-%d %H:%M:%S") if item.completed_at else "",
                     item.description or "",
+                    item.trans_id or "",
                 ]
                 writer.writerow(row)
                 yield buffer.getvalue()
@@ -291,19 +331,23 @@ class AdminService:
         page: int,
         page_size: int,
         user_id: UUID | None,
+        user_email: str | None,
         status_filter: str | None,
         provider: str | None,
         date_from: datetime | None,
         date_to: datetime | None,
+        search: str | None = None,
     ) -> schemas.TopupHistoryPage:
         items, total = self.repo.list_transactions(
             page=page,
             page_size=page_size,
             user_id=user_id,
+            user_email=user_email,
             status=status_filter,
             provider=provider,
             date_from=date_from,
             date_to=date_to,
+            search=search,
         )
         users_map = self.repo.get_users_by_ids([item.user_id for item in items])
         return schemas.TopupHistoryPage(

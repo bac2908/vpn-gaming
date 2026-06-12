@@ -21,6 +21,7 @@ def auth_service(monkeypatch: pytest.MonkeyPatch) -> AuthService:
         google_redirect_uri=None,
     )
     monkeypatch.setattr(auth_service_module, "get_settings", lambda: fake_settings)
+    auth_service_module._RATE_LIMIT_BUCKETS.clear()
 
     service = AuthService(db=object())
     service.repo = MagicMock()
@@ -68,6 +69,46 @@ def test_login_wrong_password_returns_401(auth_service: AuthService, monkeypatch
         auth_service.login(payload)
 
     assert exc.value.status_code == 401
+
+
+def test_login_locks_user_after_configured_failures(auth_service: AuthService, monkeypatch: pytest.MonkeyPatch) -> None:
+    user = SimpleNamespace(
+        id=uuid4(),
+        email="player@example.com",
+        display_name="Player",
+        role="user",
+        balance=0,
+        status="active",
+        credential=SimpleNamespace(password_hash="hashed"),
+        failed_login_attempts=0,
+        locked_until=None,
+        last_failed_login_at=None,
+    )
+    auth_service.repo.get_user_by_email.return_value = user
+    monkeypatch.setattr(security, "verify_password", lambda plain, hashed: False)
+    monkeypatch.setattr(
+        auth_service,
+        "_security_policy",
+        lambda: {
+            "password_min_length": 8,
+            "password_require_upper": False,
+            "password_require_lower": False,
+            "password_require_digit": False,
+            "lockout_max_attempts": 2,
+            "lockout_minutes": 10,
+        },
+    )
+
+    payload = schemas.LoginRequest(email="player@example.com", password="wrong")
+    with pytest.raises(HTTPException) as first:
+        auth_service.login(payload)
+    with pytest.raises(HTTPException) as second:
+        auth_service.login(payload)
+
+    assert first.value.status_code == 401
+    assert second.value.status_code == 423
+    assert user.failed_login_attempts == 2
+    assert user.locked_until is not None
 
 
 def test_get_current_user_rejects_revoked_token(auth_service: AuthService, monkeypatch: pytest.MonkeyPatch) -> None:

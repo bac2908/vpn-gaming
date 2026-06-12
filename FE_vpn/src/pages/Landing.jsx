@@ -473,7 +473,7 @@ function Landing({ ctx }) {
                     </div>
                     <div className="card border">
                         <h4>An toàn đăng nhập?</h4>
-                        <p className="muted">Rate-limit, lockout tạm, MFA, cookie HttpOnly, CSRF token.</p>
+                        <p className="muted">Rate-limit, khóa tạm khi đăng nhập sai, RBAC và kiểm soát phiên đăng nhập.</p>
                     </div>
                 </div>
             </section>

@@ -40,7 +40,7 @@ function AdminLogin({ ctx }) {
             <div className="auth-card">
                 <p className="muted">Đăng nhập quản trị</p>
                 <h2>Admin Portal</h2>
-                <p className="muted small">Chỉ dành cho nhân viên được cấp quyền. MFA/rate-limit placeholder.</p>
+                <p className="muted small">Chỉ dành cho nhân viên được cấp quyền. Có rate-limit và khóa tạm khi đăng nhập sai nhiều lần.</p>
                 <form onSubmit={onSubmit} className="stack">
                     <label className="field">
                         <span>Email</span>

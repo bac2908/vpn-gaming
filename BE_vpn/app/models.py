@@ -18,6 +18,9 @@ class User(Base):
     display_name = Column(String)
     role = Column(String, nullable=False, default="user")
     status = Column(String, nullable=False, default="active")
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime(timezone=True))
+    last_failed_login_at = Column(DateTime(timezone=True))
     balance = Column(BigInteger, nullable=False, default=0)  # Số dư tài khoản (VND)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -28,6 +31,7 @@ class User(Base):
     payments = relationship("Payment", back_populates="user")
     vpn_sessions = relationship("VpnSession", back_populates="user")
     topup_transactions = relationship("TopupTransaction", back_populates="user")
+    support_tickets = relationship("SupportTicket", back_populates="user", cascade="all, delete-orphan")
 
 
 class Credential(Base):
@@ -355,3 +359,24 @@ class AdminSettings(Base):
     snapshot_retention_count = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+    __table_args__ = (
+        Index("ix_support_tickets_user_status", "user_id", "status"),
+        Index("ix_support_tickets_status_created", "status", "created_at"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False)
+    category = Column(String, nullable=False)
+    detail = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="open")
+    admin_note = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    resolved_at = Column(DateTime(timezone=True))
+
+    user = relationship("User", back_populates="support_tickets")

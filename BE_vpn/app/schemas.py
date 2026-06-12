@@ -62,6 +62,8 @@ class AdminUserOut(BaseModel):
     role: str
     status: str
     balance: int = 0  # Số dư tài khoản (VND)
+    failed_login_attempts: int = 0
+    locked_until: datetime | None = None
     created_at: datetime | None = None
 
     class Config:
@@ -305,6 +307,20 @@ class PaymentInitResponse(BaseModel):
     amount: int
 
 
+class PaymentStatusResponse(BaseModel):
+    order_id: str
+    request_id: str
+    amount: int
+    status: str
+    provider: str
+    message: str | None = None
+    trans_id: str | None = None
+    balance_before: int | None = None
+    balance_after: int | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
 class ServicePlanOut(BaseModel):
     id: UUID
     code: str
@@ -533,3 +549,35 @@ class AdminSettingsUpdate(BaseModel):
     min_topup_amount: int = Field(..., ge=10000)
     session_timeout_hours: int = Field(..., ge=1, le=168)
     snapshot_retention_count: int = Field(..., ge=1, le=20)
+
+
+class SupportTicketCreateRequest(BaseModel):
+    title: str = Field(..., min_length=5, max_length=160)
+    type: str = Field(..., regex="^(payment|technical|account|other)$")
+    detail: str = Field(..., min_length=20, max_length=4000)
+
+
+class SupportTicketUpdateRequest(BaseModel):
+    status: str | None = Field(None, regex="^(open|in_progress|resolved|closed)$")
+    admin_note: str | None = Field(None, max_length=2000)
+
+
+class SupportTicketOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    user_email: str | None = None
+    title: str
+    type: str
+    detail: str
+    status: str
+    admin_note: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    resolved_at: datetime | None = None
+
+
+class SupportTicketsPage(BaseModel):
+    items: list[SupportTicketOut]
+    total: int
+    page: int
+    page_size: int

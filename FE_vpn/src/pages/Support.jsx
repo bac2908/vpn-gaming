@@ -1,12 +1,40 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { createSupportTicket, listMySupportTickets } from '../api/support'
 
-function Support() {
+const SUPPORT_TYPE_LABELS = {
+    payment: 'Thanh toán',
+    technical: 'Kỹ thuật',
+    account: 'Tài khoản',
+    other: 'Khác',
+}
+
+const SUPPORT_STATUS_LABELS = {
+    open: 'Mới',
+    in_progress: 'Đang xử lý',
+    resolved: 'Đã xử lý',
+    closed: 'Đã đóng',
+}
+
+const supportStatusClass = (status) => {
+    if (status === 'resolved') return 'success'
+    if (status === 'in_progress') return 'warning'
+    if (status === 'closed') return 'ghost'
+    return 'info'
+}
+
+function Support({ ctx }) {
     const location = useLocation()
+    const token = ctx?.token
     const [expandedFaq, setExpandedFaq] = useState(null)
     const [supportForm, setSupportForm] = useState({ title: '', type: '', detail: '' })
     const [supportErrors, setSupportErrors] = useState({})
     const [supportMessage, setSupportMessage] = useState('')
+    const [supportSubmitError, setSupportSubmitError] = useState('')
+    const [supportSubmitting, setSupportSubmitting] = useState(false)
+    const [tickets, setTickets] = useState([])
+    const [ticketsLoading, setTicketsLoading] = useState(false)
+    const [ticketsError, setTicketsError] = useState('')
 
     useEffect(() => {
         if (!location.hash) return
@@ -14,6 +42,27 @@ function Support() {
             document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         })
     }, [location.hash])
+
+    const loadTickets = useCallback(async () => {
+        if (!token) {
+            setTickets([])
+            return
+        }
+        setTicketsLoading(true)
+        setTicketsError('')
+        try {
+            const data = await listMySupportTickets({ page: 1, page_size: 8 }, token)
+            setTickets(data.items || [])
+        } catch (err) {
+            setTicketsError(err.message || 'Không tải được lịch sử hỗ trợ')
+        } finally {
+            setTicketsLoading(false)
+        }
+    }, [token])
+
+    useEffect(() => {
+        loadTickets()
+    }, [loadTickets])
 
     const faqs = [
         {
@@ -50,6 +99,7 @@ function Support() {
         setSupportForm((prev) => ({ ...prev, [field]: value }))
         setSupportErrors((prev) => ({ ...prev, [field]: '' }))
         setSupportMessage('')
+        setSupportSubmitError('')
     }
 
     const validateSupportForm = () => {
@@ -73,18 +123,38 @@ function Support() {
         return errors
     }
 
-    const handleSupportSubmit = (event) => {
+    const handleSupportSubmit = async (event) => {
         event.preventDefault()
         const errors = validateSupportForm()
         if (Object.keys(errors).length > 0) {
             setSupportErrors(errors)
             setSupportMessage('')
+            setSupportSubmitError('')
+            return
+        }
+
+        if (!token) {
+            setSupportSubmitError('Bạn cần đăng nhập để gửi yêu cầu hỗ trợ.')
             return
         }
 
         setSupportErrors({})
-        setSupportMessage('Đã ghi nhận yêu cầu hỗ trợ. Đội hỗ trợ sẽ phản hồi theo thông tin tài khoản của bạn.')
-        setSupportForm({ title: '', type: '', detail: '' })
+        setSupportSubmitError('')
+        setSupportSubmitting(true)
+        try {
+            await createSupportTicket({
+                title: supportForm.title.trim(),
+                type: supportForm.type,
+                detail: supportForm.detail.trim(),
+            }, token)
+            setSupportMessage('Đã gửi yêu cầu hỗ trợ. Admin có thể xem và cập nhật trạng thái trong portal quản trị.')
+            setSupportForm({ title: '', type: '', detail: '' })
+            await loadTickets()
+        } catch (err) {
+            setSupportSubmitError(err.message || 'Không gửi được yêu cầu hỗ trợ')
+        } finally {
+            setSupportSubmitting(false)
+        }
     }
 
     return (
@@ -217,10 +287,49 @@ function Support() {
                         {supportErrors.detail && <span className="field-error">{supportErrors.detail}</span>}
                     </label>
                     {supportMessage && <div className="alert success">{supportMessage}</div>}
+                    {supportSubmitError && <div className="alert error">{supportSubmitError}</div>}
                     <div className="actions">
-                        <button type="submit" className="btn primary">Gửi yêu cầu</button>
+                        <button type="submit" className="btn primary" disabled={supportSubmitting || !token}>
+                            {supportSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+                        </button>
                     </div>
                 </form>
+            </div>
+
+            <div className="card">
+                <div className="card-header">
+                    <div>
+                        <p className="muted">Ticket của bạn</p>
+                        <h3>Yêu cầu hỗ trợ gần đây</h3>
+                    </div>
+                    <button type="button" className="btn secondary" onClick={loadTickets} disabled={ticketsLoading || !token}>
+                        Làm mới
+                    </button>
+                </div>
+                {ticketsLoading ? (
+                    <p className="muted">Đang tải lịch sử hỗ trợ...</p>
+                ) : ticketsError ? (
+                    <div className="alert error">{ticketsError}</div>
+                ) : tickets.length === 0 ? (
+                    <p className="muted">Chưa có yêu cầu hỗ trợ nào.</p>
+                ) : (
+                    <div className="support-ticket-list">
+                        {tickets.map((ticket) => (
+                            <article className="support-ticket-item" key={ticket.id}>
+                                <div>
+                                    <div className="support-ticket-title">{ticket.title}</div>
+                                    <p className="muted small">
+                                        {SUPPORT_TYPE_LABELS[ticket.type] || ticket.type} · {ticket.created_at ? new Date(ticket.created_at).toLocaleString('vi-VN') : '-'}
+                                    </p>
+                                    {ticket.admin_note && <p className="support-ticket-note">{ticket.admin_note}</p>}
+                                </div>
+                                <span className={`pill ${supportStatusClass(ticket.status)}`}>
+                                    {SUPPORT_STATUS_LABELS[ticket.status] || ticket.status}
+                                </span>
+                            </article>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     )

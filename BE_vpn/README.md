@@ -185,6 +185,13 @@ GET    /subscriptions/me
 POST   /subscriptions/purchase
 ```
 
+### Support `/support`
+
+```text
+POST   /support/tickets
+GET    /support/tickets/me
+```
+
 ### Payments `/payments`
 
 ```text
@@ -214,6 +221,8 @@ GET    /admin/transactions
 GET    /admin/transactions/{transaction_id}
 GET    /admin/transactions/export
 GET    /admin/revenue/statistics
+GET    /admin/support/tickets
+PATCH  /admin/support/tickets/{ticket_id}
 GET    /admin/settings
 PUT    /admin/settings
 ```

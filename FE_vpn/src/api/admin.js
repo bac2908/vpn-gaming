@@ -59,6 +59,16 @@ export async function updateAdminSettings(payload, token) {
     return request('/admin/settings', { method: 'PUT', body: payload, token })
 }
 
+// ===== Support Ticket APIs =====
+export async function listSupportTickets(params, token) {
+    const query = buildQuery(params)
+    return request(`/admin/support/tickets${query}`, { token })
+}
+
+export async function updateSupportTicket(ticketId, payload, token) {
+    return request(`/admin/support/tickets/${ticketId}`, { method: 'PATCH', body: payload, token })
+}
+
 // ===== Session APIs =====
 export async function listSessions(params, token) {
     const query = buildQuery(params)

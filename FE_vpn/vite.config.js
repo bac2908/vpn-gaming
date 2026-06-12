@@ -16,6 +16,7 @@ export default defineConfig({
       '/machines': 'http://localhost:8000',
       '/payments': 'http://localhost:8000',
       '/subscriptions': 'http://localhost:8000',
+      '/support': 'http://localhost:8000',
       '/admin': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },

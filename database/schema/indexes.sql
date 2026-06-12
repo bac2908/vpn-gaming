@@ -5,6 +5,7 @@
 
 CREATE INDEX IF NOT EXISTS ix_users_status ON users(status);
 CREATE INDEX IF NOT EXISTS ix_users_created_at ON users(created_at);
+CREATE INDEX IF NOT EXISTS ix_users_locked_until ON users(locked_until) WHERE locked_until IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS ix_identities_user_id ON identities(user_id);
 CREATE INDEX IF NOT EXISTS ix_identities_last_login_at ON identities(last_login_at);
@@ -16,6 +17,9 @@ CREATE INDEX IF NOT EXISTS ix_password_resets_user_id ON password_resets(user_id
 CREATE INDEX IF NOT EXISTS ix_password_resets_expires_at ON password_resets(expires_at);
 
 CREATE INDEX IF NOT EXISTS ix_revoked_tokens_expires_at ON revoked_tokens(expires_at);
+
+CREATE INDEX IF NOT EXISTS ix_support_tickets_user_status ON support_tickets(user_id, status);
+CREATE INDEX IF NOT EXISTS ix_support_tickets_status_created ON support_tickets(status, created_at);
 
 CREATE INDEX IF NOT EXISTS ix_machines_status ON machines(status);
 CREATE INDEX IF NOT EXISTS ix_machines_region_status ON machines(region, status);

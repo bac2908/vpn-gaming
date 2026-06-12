@@ -8,6 +8,7 @@ import Wizard from './pages/Wizard'
 import History from './pages/History'
 import Support from './pages/Support'
 import Subscriptions from './pages/Subscriptions'
+import TopupResult from './pages/TopupResult'
 import Landing from './pages/Landing'
 import Admin from './pages/Admin'
 import Login from './pages/auth/Login'
@@ -261,6 +262,7 @@ function App() {
           <Route path="/register" element={<Register ctx={context} />} />
           <Route path="/forgot" element={<ForgotPassword />} />
           <Route path="/reset" element={<ResetPassword ctx={context} />} />
+          <Route path="/support" element={<Support ctx={context} />} />
           <Route path="/admin/login" element={<Navigate to="/admin-portal/login" replace />} />
           <Route path="/admin-portal/login" element={<AdminLogin ctx={context} />} />
           <Route
@@ -273,7 +275,8 @@ function App() {
                   <Route path="wizard" element={<Wizard ctx={context} />} />
                   <Route path="subscriptions" element={<Subscriptions ctx={context} />} />
                   <Route path="history" element={<History ctx={context} />} />
-                  <Route path="support" element={<Support />} />
+                  <Route path="topup/result" element={<TopupResult ctx={context} />} />
+                  <Route path="support" element={<Support ctx={context} />} />
                   <Route path="*" element={<Navigate to="/app" replace />} />
                 </Routes>
               </Shell>
@@ -290,6 +293,7 @@ function App() {
                   <Route path="machines" element={<Admin ctx={context} />} />
                   <Route path="sessions" element={<Admin ctx={context} />} />
                   <Route path="billing" element={<Admin ctx={context} />} />
+                  <Route path="support" element={<Admin ctx={context} />} />
                   <Route path="settings" element={<Admin ctx={context} />} />
                   <Route path="*" element={<Navigate to="/admin-portal/overview" replace />} />
                 </Routes>

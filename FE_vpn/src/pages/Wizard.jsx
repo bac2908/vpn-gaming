@@ -77,11 +77,17 @@ const getCountryData = (region) => {
 
 const MAX_VISIBLE_PLAY_SECONDS = 36 * 60 * 60
 
-const formatDurationFrom = (value, options = {}) => {
-    if (!value) return '--:--:--'
+const getElapsedSecondsFrom = (value, currentTime = Date.now()) => {
+    if (!value) return null
     const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return '--:--:--'
-    const totalSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+    if (Number.isNaN(date.getTime())) return null
+    return Math.max(0, Math.floor((currentTime - date.getTime()) / 1000))
+}
+
+const formatDurationFrom = (value, options = {}) => {
+    const currentTime = Number.isFinite(options.now) ? options.now : Date.now()
+    const totalSeconds = getElapsedSecondsFrom(value, currentTime)
+    if (totalSeconds === null) return '--:--:--'
     if (options.maxSeconds && totalSeconds > options.maxSeconds) {
         return options.staleLabel || '--:--:--'
     }
@@ -234,6 +240,7 @@ function Wizard({ ctx }) {
     const [launchFlow, setLaunchFlow] = useState(initialLaunchFlow)
     const [launchLogs, setLaunchLogs] = useState([])
     const [lastEndedSession, setLastEndedSession] = useState(null)
+    const [now, setNow] = useState(() => Date.now())
     const launchTimersRef = useRef([])
 
     const params = useMemo(() => new URLSearchParams(location.search), [location.search])
@@ -334,7 +341,7 @@ function Wizard({ ctx }) {
     const playStartedAt = session?.billing_started_at || null
     const sessionDuration = isActiveSession
         ? playStartedAt
-            ? formatDurationFrom(playStartedAt, { maxSeconds: MAX_VISIBLE_PLAY_SECONDS, staleLabel: 'Phiên cũ' })
+            ? formatDurationFrom(playStartedAt, { now, maxSeconds: MAX_VISIBLE_PLAY_SECONDS, staleLabel: 'Phiên cũ' })
             : moonlightReady
                 ? 'Đang đồng bộ'
                 : 'Chưa stream'
@@ -372,6 +379,15 @@ function Wizard({ ctx }) {
         vpn: stepStates.vpn === 'done' ? 'Connected' : stepStates.vpn === 'active' ? (downloadingOvpn ? 'Đang tải VPN...' : 'Checking route...') : vpnProfileDownloaded ? 'Chờ OpenVPN' : 'Chờ tải VPN',
         moonlight: stepStates.moonlight === 'done' ? 'Ready' : stepStates.moonlight === 'active' ? 'Waiting Sunshine...' : 'Vào chơi',
     }
+
+    useEffect(() => {
+        if (!isActiveSession || !playStartedAt) return undefined
+
+        setNow(Date.now())
+        const timer = window.setInterval(() => setNow(Date.now()), 1000)
+        return () => window.clearInterval(timer)
+    }, [isActiveSession, playStartedAt])
+
     useEffect(() => {
         if (!session?.id || !isActiveSession || session?.is_demo_launch || !ctx?.token) return undefined
 
@@ -828,7 +844,18 @@ function Wizard({ ctx }) {
     ]
     const logs = launchStarted ? launchLogs : fallbackLogs
     const playRate = Number(session?.play_rate_per_minute || machine?.play_rate_per_minute || machine?.base_rate_per_minute || 0)
-    const currentSessionCost = Number(session?.charged_amount || 0)
+    const completedPlayMinutes = Math.floor((getElapsedSecondsFrom(playStartedAt, now) ?? 0) / 60)
+    const chargedMinutes = Number(session?.charged_minutes || 0)
+    const freeMinutesUsed = Number(session?.free_minutes_used || 0)
+    const countedMinutes = chargedMinutes + freeMinutesUsed
+    const pendingCompletedMinutes = isActiveSession && playStartedAt
+        ? Math.max(0, completedPlayMinutes - countedMinutes)
+        : 0
+    const freeMinutesRemaining = session?.trial_eligible
+        ? Math.max(0, Number(session?.free_minutes_remaining ?? session?.trial_minutes_remaining ?? 0))
+        : 0
+    const pendingPaidMinutes = Math.max(0, pendingCompletedMinutes - freeMinutesRemaining)
+    const currentSessionCost = Number(session?.charged_amount || 0) + (pendingPaidMinutes * playRate)
     const snapshotLimit = Number(session?.snapshot_active_limit || machine?.snapshot_active_limit || 0)
     const canRetainSnapshot = snapshotLimit > 0
     const showRunningPanel = isActiveSession && moonlightReady

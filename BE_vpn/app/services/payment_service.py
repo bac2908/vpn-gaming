@@ -3,6 +3,7 @@ import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import HTTPException, status
@@ -35,6 +36,12 @@ class PaymentService:
     def _sign_momo(self, raw: str) -> str:
         return hmac.new(self.settings.momo_secret_key.encode(), raw.encode(), hashlib.sha256).hexdigest()
 
+    def _append_query_params(self, url: str, params: dict[str, str]) -> str:
+        parts = urlsplit(url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query.update({key: value for key, value in params.items() if value})
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
     def create_momo_payment(self, payload: schemas.PaymentCreateRequest, current_user: models.User) -> schemas.PaymentInitResponse:
         self._ensure_momo_config()
 
@@ -45,7 +52,11 @@ class PaymentService:
         request_id = secrets.token_hex(10)
         amount = payload.amount
         order_info = payload.description or "Nap tien qua MoMo"
-        redirect_url = self.settings.momo_redirect_url or self.settings.app_base_url.rstrip("/") + "/app"
+        redirect_base_url = self.settings.momo_redirect_url or self.settings.app_base_url.rstrip("/") + "/app/topup/result"
+        redirect_url = self._append_query_params(
+            redirect_base_url,
+            {"orderId": order_id, "requestId": request_id},
+        )
         ipn_url = self.settings.momo_ipn_url or self.settings.app_base_url.rstrip("/") + "/payments/momo/ipn"
         extra_data = ""
 
@@ -105,6 +116,26 @@ class PaymentService:
             request_id=request_id,
             pay_url=data.get("payUrl"),
             amount=amount,
+        )
+
+    def get_momo_payment_status(self, order_id: str, current_user: models.User) -> schemas.PaymentStatusResponse:
+        payment = self.repo.get_payment_by_order_id(order_id)
+        if not payment or str(payment.user_id) != str(current_user.id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay giao dich")
+
+        topup = self.repo.get_topup_by_payment_id(payment.id)
+        return schemas.PaymentStatusResponse(
+            order_id=payment.order_id,
+            request_id=payment.request_id,
+            amount=int(payment.amount or 0),
+            status=(topup.status if topup else payment.status) or "pending",
+            provider=payment.provider or "momo",
+            message=payment.message,
+            trans_id=payment.trans_id,
+            balance_before=int(topup.balance_before) if topup else None,
+            balance_after=int(topup.balance_after) if topup else None,
+            created_at=payment.created_at,
+            completed_at=topup.completed_at if topup else None,
         )
 
     def momo_ipn(self, payload: dict) -> dict:

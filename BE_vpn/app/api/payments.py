@@ -23,6 +23,15 @@ def create_momo_payment(
     return payment_service.create_momo_payment(payload, current_user)
 
 
+@router.get("/momo/status", response_model=schemas.PaymentStatusResponse)
+def get_momo_payment_status(
+    order_id: str = Query(..., min_length=1),
+    current_user: models.User = Depends(get_current_user),
+    payment_service: PaymentService = Depends(get_payment_service),
+):
+    return payment_service.get_momo_payment_status(order_id, current_user)
+
+
 @router.post("/momo/ipn")
 async def momo_ipn(request: Request, payment_service: PaymentService = Depends(get_payment_service)):
     payload = await request.json()

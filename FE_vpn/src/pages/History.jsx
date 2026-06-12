@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, Clock3, CreditCard, Gamepad2, RotateCcw, Server, Wallet } from 'lucide-react'
 import { getSessionHistory, getSessionHistorySummary, resumeMachine } from '../api/machines'
 import { getTopupHistory, getTopupSummary } from '../api/payments'
@@ -12,6 +12,7 @@ const HISTORY_EXPORT_PAGE_SIZE = 50
 function History({ ctx }) {
     const [activeTab, setActiveTab] = useState('sessions')
     const navigate = useNavigate()
+    const location = useLocation()
     const [sessionHistory, setSessionHistory] = useState([])
     const [sessionLoading, setSessionLoading] = useState(false)
     const [sessionError, setSessionError] = useState('')
@@ -317,6 +318,14 @@ function History({ ctx }) {
     }
 
     const [exportOpen, setExportOpen] = useState(false)
+
+    useEffect(() => {
+        const tab = new URLSearchParams(location.search).get('tab')
+        if (tab === 'topup' || tab === 'sessions') {
+            setActiveTab(tab)
+        }
+    }, [location.search])
+
     const recentSessions = overviewSessions.length ? overviewSessions : sessionHistory
     const recentTopups = overviewTopups.length ? overviewTopups : topupHistory
     const fallbackStreamedSessions = recentSessions.filter((session) => getSessionSeconds(session) > 0)

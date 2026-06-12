@@ -34,6 +34,17 @@ def init_database():
     with engine.begin() as conn:
         try:
             conn.execute(text("""
+                ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS last_failed_login_at TIMESTAMPTZ
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_users_locked_until
+                    ON users(locked_until)
+                    WHERE locked_until IS NOT NULL
+            """))
+            conn.execute(text("""
                 ALTER TABLE machines
                     ADD COLUMN IF NOT EXISTS cooldown_until TIMESTAMPTZ,
                     ADD COLUMN IF NOT EXISTS base_rate_per_minute INTEGER NOT NULL DEFAULT 0,
@@ -139,6 +150,14 @@ def init_database():
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS ix_session_billing_events_session
                     ON session_billing_events(session_id)
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_support_tickets_user_status
+                    ON support_tickets(user_id, status)
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_support_tickets_status_created
+                    ON support_tickets(status, created_at)
             """))
             conn.execute(text("""
                 ALTER TABLE admin_settings DROP CONSTRAINT IF EXISTS ck_admin_settings_snapshot_retention_count

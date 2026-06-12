@@ -44,6 +44,86 @@ def test_free_quota_bills_without_charging_balance() -> None:
     service.repo.add_billing_event.assert_called_once()
 
 
+def test_payg_billing_waits_until_a_full_minute_completes() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    now = datetime.utcnow()
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=uuid4(),
+        status="active",
+        ended_at=None,
+        billing_tier="basic",
+        play_rate_per_minute=50,
+        billing_started_at=now - timedelta(seconds=59),
+        charged_minutes=0,
+        charged_amount=0,
+        free_minutes_used=0,
+        trial_eligible=False,
+        last_billed_at=None,
+        lifecycle_state="playing",
+        connection_state="streaming",
+        idle_warning_at=None,
+        disconnected_at=None,
+        grace_period_seconds=300,
+        max_session_seconds=0,
+        idle_stop_seconds=900,
+        idle_warning_seconds=600,
+        last_stream_activity_at=now,
+    )
+    service.repo.get_daily_billing_totals.return_value = (0, 0)
+
+    changed = service._bill_session_until_now(session, user, now)
+
+    assert changed is False
+    assert session.charged_minutes == 0
+    assert session.charged_amount == 0
+    assert user.balance == 1000
+    service.repo.add_billing_event.assert_not_called()
+
+
+def test_payg_billing_charges_when_a_full_minute_completes() -> None:
+    service = _service()
+    user = SimpleNamespace(id=uuid4(), balance=1000)
+    now = datetime.utcnow()
+    session = SimpleNamespace(
+        id=uuid4(),
+        user_id=user.id,
+        user=user,
+        machine_id=uuid4(),
+        status="active",
+        ended_at=None,
+        billing_tier="basic",
+        play_rate_per_minute=50,
+        billing_started_at=now - timedelta(seconds=60),
+        charged_minutes=0,
+        charged_amount=0,
+        free_minutes_used=0,
+        trial_eligible=False,
+        last_billed_at=None,
+        lifecycle_state="playing",
+        connection_state="streaming",
+        idle_warning_at=None,
+        disconnected_at=None,
+        grace_period_seconds=300,
+        max_session_seconds=0,
+        idle_stop_seconds=900,
+        idle_warning_seconds=600,
+        last_stream_activity_at=now,
+    )
+    service.repo.get_daily_billing_totals.return_value = (0, 0)
+
+    changed = service._bill_session_until_now(session, user, now)
+
+    assert changed is True
+    assert session.charged_minutes == 1
+    assert session.charged_amount == 50
+    assert user.balance == 950
+    service.repo.add_billing_event.assert_called_once()
+
+
 def _history_session(**overrides) -> SimpleNamespace:
     now = datetime.utcnow()
     data = {

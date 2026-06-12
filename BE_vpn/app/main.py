@@ -27,6 +27,7 @@ from app.api.machines import router as machines_router
 from app.api.payments import router as payments_router
 from app.api.admin import router as admin_router
 from app.api.subscriptions import router as subscriptions_router
+from app.api.support import router as support_router
 from app import security
 from app.services.machine_service import MachineService
 
@@ -249,6 +250,7 @@ app.include_router(auth_router)
 app.include_router(machines_router)
 app.include_router(payments_router)
 app.include_router(subscriptions_router)
+app.include_router(support_router)
 app.include_router(admin_router)
 
 @app.get("/health")
