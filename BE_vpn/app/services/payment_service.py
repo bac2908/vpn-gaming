@@ -42,6 +42,51 @@ class PaymentService:
         query.update({key: value for key, value in params.items() if value})
         return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
+    def _demo_auto_confirm_enabled(self) -> bool:
+        if not self.settings.momo_demo_auto_confirm:
+            return False
+
+        targets = [
+            self.settings.app_base_url,
+            self.settings.momo_redirect_url,
+            self.settings.momo_ipn_url,
+        ]
+        return any(target and ("localhost" in target or "127.0.0.1" in target) for target in targets)
+
+    def _auto_confirm_demo_payment(self, payment: models.Payment) -> None:
+        if payment.status != "pending":
+            return
+
+        user = self.repo.get_user_by_id(payment.user_id)
+        if not user:
+            return
+
+        trans_id = payment.trans_id or f"DEMO-{payment.request_id}"
+        self.repo.mark_payment_result(
+            payment=payment,
+            is_success=True,
+            message="Demo local: tu dong xac nhan vi localhost khong nhan duoc MoMo IPN.",
+            trans_id=trans_id,
+            extra_data=payment.extra_data or "",
+        )
+
+        topup = self.repo.get_topup_by_payment_id(payment.id)
+        if topup:
+            self.repo.apply_topup_success(
+                topup=topup,
+                user=user,
+                amount=int(payment.amount or 0),
+                trans_id=payment.trans_id,
+            )
+        else:
+            self.repo.create_succeeded_topup_from_payment(
+                payment=payment,
+                user=user,
+                trans_id=payment.trans_id,
+                description="Demo local MoMo auto-confirm",
+            )
+        self.repo.commit()
+
     def create_momo_payment(self, payload: schemas.PaymentCreateRequest, current_user: models.User) -> schemas.PaymentInitResponse:
         self._ensure_momo_config()
 
@@ -122,6 +167,11 @@ class PaymentService:
         payment = self.repo.get_payment_by_order_id(order_id)
         if not payment or str(payment.user_id) != str(current_user.id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay giao dich")
+
+        if payment.status == "pending" and self._demo_auto_confirm_enabled():
+            self.logger.info("Auto-confirming local demo MoMo payment: %s", order_id)
+            self._auto_confirm_demo_payment(payment)
+            payment = self.repo.get_payment_by_order_id(order_id)
 
         topup = self.repo.get_topup_by_payment_id(payment.id)
         return schemas.PaymentStatusResponse(

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -51,12 +51,12 @@ class PaymentRepository:
         payment.message = message
         payment.trans_id = trans_id or payment.trans_id
         payment.extra_data = extra_data
-        payment.updated_at = datetime.utcnow()
+        payment.updated_at = datetime.now(timezone.utc)
         self.db.add(payment)
 
     def mark_topup_failed(self, topup: models.TopupTransaction) -> None:
         topup.status = "failed"
-        topup.completed_at = datetime.utcnow()
+        topup.completed_at = datetime.now(timezone.utc)
         self.db.add(topup)
 
     def apply_topup_success(self, topup: models.TopupTransaction, user: models.User, amount: int, trans_id: str | None) -> tuple[int, int]:
@@ -69,7 +69,7 @@ class PaymentRepository:
         topup.balance_after = new_balance
         topup.status = "succeeded"
         topup.trans_id = trans_id
-        topup.completed_at = datetime.utcnow()
+        topup.completed_at = datetime.now(timezone.utc)
         self.db.add(topup)
         return old_balance, new_balance
 
@@ -96,7 +96,7 @@ class PaymentRepository:
             provider=payment.provider or "momo",
             description=description,
             trans_id=trans_id,
-            completed_at=datetime.utcnow(),
+            completed_at=datetime.now(timezone.utc),
         )
         self.db.add(topup)
         return topup, old_balance, new_balance

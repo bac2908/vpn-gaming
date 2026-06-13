@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     momo_redirect_url: Optional[str] = None
     momo_ipn_url: Optional[str] = None
     momo_request_type: str = "captureWallet"
+    momo_demo_auto_confirm: bool = False
 
     @property
     def cors_origins_list(self) -> List[str]:
