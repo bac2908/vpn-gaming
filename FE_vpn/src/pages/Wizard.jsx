@@ -175,14 +175,14 @@ const initialLaunchFlow = {
 
 function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSunshinePaired, pairingSunshine }) {
     const isPlay = type === 'play'
-    const title = isPlay ? 'Pair Moonlight / Sunshine' : 'VPN route'
+    const title = isPlay ? 'Mở Moonlight để chơi' : 'VPN route'
     const lines = isPlay
         ? [
             'Copy IP local của Gaming VM.',
             'Nếu chưa có Moonlight, tải và cài Moonlight trên thiết bị chơi trước.',
             'Mở app Moonlight, chọn Add PC và nhập IP local.',
             'Khi Moonlight hiện PIN, mở Sunshine Web và nhập PIN đó.',
-            'Sau khi pair thành công, quay lại web bấm Xác nhận đã ghép Sunshine.',
+            'Sau khi Moonlight kết nối được máy, quay lại web bấm Tôi đã mở Moonlight.',
         ]
         : [
             'Nếu chưa có OpenVPN Connect, tải và cài ứng dụng trước.',
@@ -225,7 +225,7 @@ function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSun
                             onClick={onMarkSunshinePaired}
                             disabled={!session?.ip_address || session?.sunshine_paired || pairingSunshine}
                         >
-                            {pairingSunshine ? 'Đang cập nhật...' : 'Xác nhận đã ghép Sunshine'}
+                            {pairingSunshine ? 'Đang cập nhật...' : 'Tôi đã mở Moonlight'}
                         </button>
                     </div>
                 )}
@@ -628,7 +628,7 @@ function Wizard({ ctx }) {
                     return updated
                 })
                 addLaunchLog('VPN route', 'VPN route established', 'OK')
-                setActionMessage(`VPN Online. IP local: ${localIp}. Bây giờ hãy mở Moonlight, thêm PC bằng IP này rồi nhập PIN trong Sunshine Web.`)
+            setActionMessage(`VPN Online. IP local: ${localIp}. Bây giờ hãy mở Moonlight, thêm PC bằng IP này; nếu Moonlight hỏi PIN thì nhập PIN trong Sunshine Web.`)
             })
             return
         }
@@ -638,7 +638,7 @@ function Wizard({ ctx }) {
             localStorage.setItem('active_session', JSON.stringify(checked))
             setLaunchFlow((prev) => ({ ...prev, vpn: 'done' }))
             addLaunchLog('VPN route', 'VPN route established', 'OK')
-            setActionMessage(`VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}. Mở Moonlight, thêm PC bằng IP này rồi nhập PIN trong Sunshine Web.`)
+            setActionMessage(`VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}. Mở Moonlight, thêm PC bằng IP này; nếu Moonlight hỏi PIN thì nhập PIN trong Sunshine Web.`)
         } catch (err) {
             setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
             setError(err.message || 'Không thể kiểm tra kết nối VPN')
@@ -699,9 +699,48 @@ function Wizard({ ctx }) {
         setActionMessage('Đã mở Sunshine. Nếu trình duyệt báo chứng chỉ không tin cậy, hãy tiếp tục theo hướng dẫn.')
     }
 
+    const ensureVpnBeforeMoonlight = async () => {
+        if (!session?.id || !isActiveSession) {
+            throw new Error('Chưa có phiên active để mở Moonlight.')
+        }
+        if (session?.ip_address) return session
+
+        setCheckingVpn(true)
+        setLaunchFlow((prev) => ({ ...prev, vpn: 'active' }))
+        addLaunchLog('VPN route', 'Auto checking before Moonlight', 'RUN')
+        setActionMessage('Đang xác nhận VPN trước khi mở Moonlight...')
+
+        try {
+            if (session?.is_demo_launch) {
+                const localIp = machine?.ip_address || machine?.local_ip || '10.8.0.24'
+                const updated = {
+                    ...session,
+                    ip_address: localIp,
+                    vpn_online: true,
+                    vpn_profile_downloaded: true,
+                    updated_at: new Date().toISOString(),
+                }
+                setSession(updated)
+                localStorage.setItem('active_session', JSON.stringify(updated))
+                setLaunchFlow((prev) => ({ ...prev, vpn: 'done' }))
+                addLaunchLog('VPN route', 'VPN route established', 'OK')
+                return updated
+            }
+
+            const checked = await checkVpnConnection(session.id, ctx?.token)
+            setSession(checked)
+            localStorage.setItem('active_session', JSON.stringify(checked))
+            setLaunchFlow((prev) => ({ ...prev, vpn: 'done' }))
+            addLaunchLog('VPN route', 'VPN route established', 'OK')
+            return checked
+        } finally {
+            setCheckingVpn(false)
+        }
+    }
+
     const handleMarkSunshinePaired = async () => {
-        if (!session?.id || !vpnOnline) {
-            setError('Cần VPN online trước khi xác nhận Sunshine đã ghép pin.')
+        if (!session?.id || !isActiveSession) {
+            setError('Chưa có phiên active để xác nhận Moonlight.')
             return
         }
 
@@ -709,10 +748,20 @@ function Wizard({ ctx }) {
         setActionMessage('')
         setPairingSunshine(true)
         setLaunchFlow((prev) => ({ ...prev, moonlight: 'active' }))
-        addLaunchLog('Sunshine', 'Waiting Sunshine', 'RUN')
+        addLaunchLog('Moonlight', 'Waiting Moonlight', 'RUN')
+        let readySession = session
+        try {
+            readySession = await ensureVpnBeforeMoonlight()
+        } catch (err) {
+            setLaunchFlow((prev) => ({ ...prev, moonlight: 'wait' }))
+            setError(err.message || 'Chưa xác nhận được VPN để mở Moonlight.')
+            setPairingSunshine(false)
+            return
+        }
+
         if (session?.is_demo_launch) {
             clearLaunchTimers()
-            setActionMessage('Đang pair Sunshine/Moonlight...')
+            setActionMessage('Đang ghi nhận Moonlight đã sẵn sàng...')
             scheduleLaunchStep(700, () => {
                 addLaunchLog('Moonlight', 'Pairing Moonlight', 'RUN')
             })
@@ -724,7 +773,7 @@ function Wizard({ ctx }) {
                 setLaunchFlow((prev) => ({ ...prev, moonlight: 'done' }))
                 setSession((prev) => {
                     const updated = {
-                        ...(prev || session),
+                        ...(prev || readySession),
                         sunshine_paired: true,
                         moonlight_ready: true,
                         updated_at: new Date().toISOString(),
@@ -734,21 +783,21 @@ function Wizard({ ctx }) {
                 })
                 addLaunchLog('Sunshine', 'Sunshine ready', 'OK')
                 addLaunchLog('Moonlight', 'Moonlight available', 'OK')
-                setActionMessage('Moonlight Ready. Phiên đã sẵn sàng chơi.')
+                setActionMessage('Moonlight Ready. Hãy chuyển sang app Moonlight để chọn máy và bắt đầu chơi.')
             })
             return
         }
         try {
-            const paired = await markSunshinePaired(session.id, ctx?.token)
+            const paired = await markSunshinePaired(readySession.id, ctx?.token)
             setSession(paired)
             localStorage.setItem('active_session', JSON.stringify(paired))
             setLaunchFlow((prev) => ({ ...prev, moonlight: 'done' }))
             addLaunchLog('Sunshine', 'Sunshine ready', 'OK')
             addLaunchLog('Moonlight', 'Moonlight available', 'OK')
-            setActionMessage('Sunshine đã ghép pin. Phiên đã sẵn sàng chơi qua Moonlight.')
+            setActionMessage('Moonlight Ready. Web đã ghi nhận VPN và Moonlight sẵn sàng; hãy chuyển sang app Moonlight để chơi.')
         } catch (err) {
             setLaunchFlow((prev) => ({ ...prev, moonlight: 'wait' }))
-            setError(err.message || 'Không thể cập nhật trạng thái Sunshine')
+            setError(err.message || 'Không thể cập nhật trạng thái Moonlight')
         } finally {
             setPairingSunshine(false)
         }
@@ -1157,8 +1206,8 @@ function Wizard({ ctx }) {
                             <div className={sunshinePaired ? 'ready' : pairingSunshine ? 'active' : ''}>
                                 <span className="sl-ready-icon"><Sun className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
-                                    <strong>Sunshine {sunshinePaired ? 'đã pairing' : 'chờ pairing'}</strong>
-                                    <p className="sl-ready-desc">{sunshinePaired ? 'Thiết bị đã được ghép nối' : 'Sunshine chạy trên máy cloud, chờ PIN từ Moonlight'}</p>
+                                    <strong>{sunshinePaired ? 'Sunshine đã nhận PIN' : 'Sunshine chờ PIN'}</strong>
+                                    <p className="sl-ready-desc">{sunshinePaired ? 'Moonlight đã được ghi nhận sẵn sàng' : 'Sunshine chạy trên máy cloud, chỉ mở khi Moonlight hỏi PIN'}</p>
                                 </div>
                                 <em className={`sl-ready-status ${sunshinePaired ? 'text-emerald-400' : pairingSunshine ? 'text-yellow-400' : 'text-slate-500'}`}>
                                     {sunshinePaired ? 'Sẵn sàng' : pairingSunshine ? 'Đang ghép' : 'Chờ xử lý'}
@@ -1182,8 +1231,8 @@ function Wizard({ ctx }) {
                     <div className="sl-panel sl-next-card">
                         <div>
                             <p className="sl-next-kicker">TIẾP THEO</p>
-                            <h3>{vpnOnline ? 'Pair Moonlight' : 'Kết nối VPN'}</h3>
-                            <span>{vpnOnline ? 'Copy IP, thêm PC trong Moonlight, nhập PIN trong Sunshine rồi xác nhận đã pair.' : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
+                            <h3>{vpnOnline ? 'Mở Moonlight' : 'Kết nối VPN'}</h3>
+                            <span>{vpnOnline ? 'Mở app Moonlight, thêm PC bằng IP local. Nếu app hỏi PIN thì nhập PIN trong Sunshine Web, sau đó bấm Tôi đã mở Moonlight.' : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
                             <div className="sl-tool-mini">
                                 <strong>{vpnOnline ? 'Dùng Moonlight trên thiết bị chơi' : 'Dùng OpenVPN Connect để mở file .ovpn'}</strong>
                                 <p>{vpnOnline ? 'Moonlight là app người chơi mở để nhập IP local. Sunshine là host đã có trên máy cloud và chỉ dùng để nhập PIN pairing.' : 'Nếu chưa cài OpenVPN Connect, tải trước rồi mới import file .ovpn của phiên này.'}</p>
@@ -1218,11 +1267,11 @@ function Wizard({ ctx }) {
                                 {vpnOnline && (
                                     <>
                                         <button type="button" className="btn primary outline-violet" onClick={() => setActiveGuide('play')}>
-                                            Hướng dẫn pair <ExternalLink className="h-4 w-4 inline ml-1" />
+                                            Hướng dẫn mở Moonlight <ExternalLink className="h-4 w-4 inline ml-1" />
                                         </button>
                                         {!sunshinePaired && (
                                             <button type="button" className="btn secondary" onClick={handleMarkSunshinePaired} disabled={pairingSunshine}>
-                                                {pairingSunshine ? 'Đang cập nhật...' : 'Xác nhận đã ghép Sunshine'}
+                                                {pairingSunshine ? 'Đang cập nhật...' : 'Tôi đã mở Moonlight'}
                                             </button>
                                         )}
                                     </>
