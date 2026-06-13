@@ -173,15 +173,23 @@ const initialLaunchFlow = {
     moonlight: 'wait',
 }
 
-function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSunshinePaired, pairingSunshine }) {
+const isLocalDemoHost = () => {
+    if (typeof window === 'undefined') return false
+    return ['localhost', '127.0.0.1'].includes(window.location.hostname)
+}
+
+function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSunshinePaired, pairingSunshine, sunshineDemoMode }) {
     const isPlay = type === 'play'
     const title = isPlay ? 'Mở Moonlight để chơi' : 'VPN route'
+    const sunshineHelpLine = sunshineDemoMode
+        ? 'Demo local: bấm Mô phỏng Sunshine Web để bỏ qua bước PIN vì chưa có máy cloud thật chạy Sunshine.'
+        : 'Khi Moonlight hiện PIN, mở Sunshine Web và nhập PIN đó.'
     const lines = isPlay
         ? [
             'Copy IP local của Gaming VM.',
             'Nếu chưa có Moonlight, tải và cài Moonlight trên thiết bị chơi trước.',
             'Mở app Moonlight, chọn Add PC và nhập IP local.',
-            'Khi Moonlight hiện PIN, mở Sunshine Web và nhập PIN đó.',
+            sunshineHelpLine,
             'Sau khi Moonlight kết nối được máy, quay lại web bấm Tôi đã mở Moonlight.',
         ]
         : [
@@ -206,7 +214,7 @@ function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSun
                     {lines.map((line) => <li key={line}>{line}</li>)}
                 </ol>
                 <p className="wizard-help-note">
-                    {isPlay ? SUNSHINE_HOST_NOTE : 'File .ovpn chỉ dùng cho phiên hiện tại. Khi tạo phiên mới, hãy tải profile mới rồi import lại vào OpenVPN Connect.'}
+                    {isPlay ? (sunshineDemoMode ? 'Chế độ demo/local không mở https://IP:47990 để tránh lỗi kết nối; khi có VM thật, nút này sẽ mở Sunshine Web.' : SUNSHINE_HOST_NOTE) : 'File .ovpn chỉ dùng cho phiên hiện tại. Khi tạo phiên mới, hãy tải profile mới rồi import lại vào OpenVPN Connect.'}
                 </p>
                 {!isPlay && (
                     <div className="actions">
@@ -218,7 +226,7 @@ function HelpModal({ type, session, onClose, onCopyIp, onOpenSunshine, onMarkSun
                     <div className="actions">
                         <a className="btn secondary" href={CLIENT_TOOL_LINKS.moonlight} target="_blank" rel="noopener noreferrer">Tải Moonlight</a>
                         <button type="button" className="btn secondary" onClick={onCopyIp} disabled={!session?.ip_address}>Copy IP VM</button>
-                        <button type="button" className="btn ghost" onClick={onOpenSunshine} disabled={!session?.ip_address}>Mở Sunshine Web</button>
+                        <button type="button" className="btn ghost" onClick={onOpenSunshine} disabled={!session?.ip_address}>{sunshineDemoMode ? 'Mô phỏng Sunshine Web' : 'Mở Sunshine Web'}</button>
                         <button
                             type="button"
                             className="btn primary"
@@ -628,7 +636,7 @@ function Wizard({ ctx }) {
                     return updated
                 })
                 addLaunchLog('VPN route', 'VPN route established', 'OK')
-            setActionMessage(`VPN Online. IP local: ${localIp}. Bây giờ hãy mở Moonlight, thêm PC bằng IP này; nếu Moonlight hỏi PIN thì nhập PIN trong Sunshine Web.`)
+                setActionMessage(`VPN Online. IP local: ${localIp}. Bây giờ hãy mở Moonlight, thêm PC bằng IP này; trong demo hãy bấm Mô phỏng Sunshine Web rồi bấm Tôi đã mở Moonlight.`)
             })
             return
         }
@@ -638,7 +646,11 @@ function Wizard({ ctx }) {
             localStorage.setItem('active_session', JSON.stringify(checked))
             setLaunchFlow((prev) => ({ ...prev, vpn: 'done' }))
             addLaunchLog('VPN route', 'VPN route established', 'OK')
-            setActionMessage(`VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}. Mở Moonlight, thêm PC bằng IP này; nếu Moonlight hỏi PIN thì nhập PIN trong Sunshine Web.`)
+            setActionMessage(
+                isLocalDemoHost()
+                    ? `VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}. Mở Moonlight, thêm PC bằng IP này; trong demo hãy bấm Mô phỏng Sunshine Web rồi bấm Tôi đã mở Moonlight.`
+                    : `VPN online. IP local: ${checked.ip_address || 'đang cập nhật'}. Mở Moonlight, thêm PC bằng IP này; nếu Moonlight hỏi PIN thì nhập PIN trong Sunshine Web.`,
+            )
         } catch (err) {
             setLaunchFlow((prev) => ({ ...prev, vpn: 'wait' }))
             setError(err.message || 'Không thể kiểm tra kết nối VPN')
@@ -691,6 +703,13 @@ function Wizard({ ctx }) {
     const handleOpenSunshine = () => {
         if (!session?.ip_address) {
             setError('Chưa có IP local để mở Sunshine.')
+            return
+        }
+
+        if (session?.is_demo_launch || isLocalDemoHost()) {
+            setError('')
+            addLaunchLog('Sunshine', 'Demo PIN accepted', 'OK')
+            setActionMessage('Demo local: Sunshine Web chỉ mở được khi có máy cloud thật. Hệ thống đã mô phỏng bước nhập PIN; bấm Tôi đã mở Moonlight để hoàn tất.')
             return
         }
 
@@ -877,12 +896,22 @@ function Wizard({ ctx }) {
     const sunshineTime = sunshinePaired ? 'Ready' : pairingSunshine ? 'Waiting Sunshine...' : '--:--:--'
     const moonlightState = launchFlow.moonlight !== 'wait' ? launchFlow.moonlight : moonlightReady ? 'done' : 'wait'
     const moonlightTime = moonlightState === 'done' ? 'Ready' : moonlightState === 'active' ? 'Pairing Moonlight...' : '--:--:--'
+    const sunshineDemoMode = Boolean(session?.is_demo_launch || isLocalDemoHost())
+    const sunshinePairDesc = sunshineDemoMode
+        ? 'Demo mô phỏng bước PIN; không mở https://IP:47990'
+        : 'Nhập PIN từ Moonlight vào Sunshine Web'
+    const nextMoonlightText = sunshineDemoMode
+        ? 'Mở app Moonlight, thêm PC bằng IP local. Trong demo, bấm Mô phỏng Sunshine Web rồi bấm Tôi đã mở Moonlight.'
+        : 'Mở app Moonlight, thêm PC bằng IP local. Nếu app hỏi PIN thì nhập PIN trong Sunshine Web, sau đó bấm Tôi đã mở Moonlight.'
+    const nextMoonlightNote = sunshineDemoMode
+        ? 'Moonlight là app người chơi mở để nhập IP local. Sunshine Web được mô phỏng trong demo local vì chưa có máy cloud thật chạy Sunshine.'
+        : 'Moonlight là app người chơi mở để nhập IP local. Sunshine là host đã có trên máy cloud và chỉ dùng để nhập PIN pairing.'
 
     const processRows = [
         { title: 'Cloud Rig', desc: machine ? 'Selected' : 'Chưa chọn máy', time: machine ? 'Selected' : '--:--:--', state: machine ? 'done' : 'wait' },
         { title: 'Boot VM', desc: bootState === 'active' ? 'Đang khởi động VM...' : 'Khởi động máy ảo', time: bootTime, state: bootState },
         { title: 'VPN Route', desc: vpnState === 'active' ? vpnActiveDesc : vpnWaitingDesc, time: vpnDisplayTime, state: vpnState },
-        { title: 'Sunshine pairing', desc: 'Nhập PIN từ Moonlight vào Sunshine Web', time: sunshineTime, state: sunshineState },
+        { title: 'Sunshine pairing', desc: sunshinePairDesc, time: sunshineTime, state: sunshineState },
         { title: 'Moonlight stream', desc: 'Sẵn sàng vào chơi', time: moonlightTime, state: moonlightState },
     ]
     const fallbackLogs = [
@@ -940,6 +969,7 @@ function Wizard({ ctx }) {
                     type={activeGuide}
                     session={session}
                     pairingSunshine={pairingSunshine}
+                    sunshineDemoMode={sunshineDemoMode}
                     onClose={() => setActiveGuide(null)}
                     onCopyIp={handleCopyIp}
                     onOpenSunshine={handleOpenSunshine}
@@ -1207,7 +1237,7 @@ function Wizard({ ctx }) {
                                 <span className="sl-ready-icon"><Sun className="h-5 w-5" /></span>
                                 <div className="sl-ready-copy">
                                     <strong>{sunshinePaired ? 'Sunshine đã nhận PIN' : 'Sunshine chờ PIN'}</strong>
-                                    <p className="sl-ready-desc">{sunshinePaired ? 'Moonlight đã được ghi nhận sẵn sàng' : 'Sunshine chạy trên máy cloud, chỉ mở khi Moonlight hỏi PIN'}</p>
+                                    <p className="sl-ready-desc">{sunshinePaired ? 'Moonlight đã được ghi nhận sẵn sàng' : sunshinePairDesc}</p>
                                 </div>
                                 <em className={`sl-ready-status ${sunshinePaired ? 'text-emerald-400' : pairingSunshine ? 'text-yellow-400' : 'text-slate-500'}`}>
                                     {sunshinePaired ? 'Sẵn sàng' : pairingSunshine ? 'Đang ghép' : 'Chờ xử lý'}
@@ -1232,10 +1262,10 @@ function Wizard({ ctx }) {
                         <div>
                             <p className="sl-next-kicker">TIẾP THEO</p>
                             <h3>{vpnOnline ? 'Mở Moonlight' : 'Kết nối VPN'}</h3>
-                            <span>{vpnOnline ? 'Mở app Moonlight, thêm PC bằng IP local. Nếu app hỏi PIN thì nhập PIN trong Sunshine Web, sau đó bấm Tôi đã mở Moonlight.' : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
+                            <span>{vpnOnline ? nextMoonlightText : vpnProfileDownloaded ? 'Import profile vào OpenVPN, bật kết nối rồi quay lại xác nhận.' : 'Tải VPN profile trước, sau đó import vào OpenVPN.'}</span>
                             <div className="sl-tool-mini">
                                 <strong>{vpnOnline ? 'Dùng Moonlight trên thiết bị chơi' : 'Dùng OpenVPN Connect để mở file .ovpn'}</strong>
-                                <p>{vpnOnline ? 'Moonlight là app người chơi mở để nhập IP local. Sunshine là host đã có trên máy cloud và chỉ dùng để nhập PIN pairing.' : 'Nếu chưa cài OpenVPN Connect, tải trước rồi mới import file .ovpn của phiên này.'}</p>
+                                <p>{vpnOnline ? nextMoonlightNote : 'Nếu chưa cài OpenVPN Connect, tải trước rồi mới import file .ovpn của phiên này.'}</p>
                                 <div className="sl-tool-mini-actions">
                                     {!vpnOnline && (
                                         <a href={CLIENT_TOOL_LINKS.openvpn} target="_blank" rel="noopener noreferrer">Tải OpenVPN Connect</a>
